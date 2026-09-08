@@ -1,0 +1,6 @@
+{
+  "name": "PDV Web",
+  "description": "Frente de Caixa (PDV) Web integrado com TOTVS Protheus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
