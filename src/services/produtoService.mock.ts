@@ -1,4 +1,4 @@
-import { Produto } from '../types/produto';
+import { Produto, ProdutoService } from '../types/produto';
 
 // Geração de EAN-13 válido simplificada para mock
 // O último dígito é o verificador
@@ -43,11 +43,6 @@ export const mockProdutos: Produto[] = [
   { codigo: '0029', descricao: 'LAMINA DE BARBEAR C/ 2', unidade: 'UN', preco: 8.50, codigoBarras: gerarEAN13('789123456029'), grupo: 'HIGIENE' },
   { codigo: '0030', descricao: 'PILHA ALCALINA AA C/ 4', unidade: 'PC', preco: 18.90, codigoBarras: gerarEAN13('789123456030'), grupo: 'BAZAR' },
 ];
-
-export interface ProdutoService {
-  buscarPorCodigoOuBarras(codigo: string): Promise<Produto | null>;
-  buscarPorDescricao(descricao: string): Promise<Produto[]>;
-}
 
 export const produtoServiceMock: ProdutoService = {
   buscarPorCodigoOuBarras: async (codigo) => {

@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { usePdvStore } from '../../store/pdvStore';
-import { MonitorPlay, Wallet, Lock, Search, LogOut, Clock, User, Store } from 'lucide-react';
+import { MonitorPlay, Wallet, Lock, Search, LogOut, Clock, User, Store, Ticket } from 'lucide-react';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { formatMoney } from '../../utils/formatters';
 
 export function HomePage() {
   const navigate = useNavigate();
   const { vendedor, loja, caixa, logout } = useAuthStore();
-  const { isCaixaAberto, fecharCaixa } = usePdvStore();
+  const { isCaixaAberto, fundoDeTroco, fecharCaixa } = usePdvStore();
   const [horaAtual, setHoraAtual] = useState(new Date());
+  const [confirmandoFechamento, setConfirmandoFechamento] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setHoraAtual(new Date()), 1000);
@@ -23,10 +26,9 @@ export function HomePage() {
     navigate('/login');
   };
 
-  const handleFechamento = () => {
-    if(confirm('Deseja realmente fechar o caixa?')) {
-      fecharCaixa();
-    }
+  const confirmarFechamento = () => {
+    setConfirmandoFechamento(false);
+    fecharCaixa();
   };
 
   return (
@@ -76,7 +78,7 @@ export function HomePage() {
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           {/* Card PDV - Active */}
           <button 
             onClick={() => navigate('/pdv')}
@@ -99,8 +101,8 @@ export function HomePage() {
             <span className="text-slate-400 text-sm">Retirada de valor</span>
           </div>
 
-          <button 
-            onClick={handleFechamento}
+          <button
+            onClick={() => setConfirmandoFechamento(true)}
             disabled={!isCaixaAberto}
             className="bg-white p-8 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-4 text-slate-500 h-64 border border-slate-200 relative overflow-hidden hover:border-slate-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed group"
           >
@@ -109,16 +111,38 @@ export function HomePage() {
             <span className="text-slate-400 text-sm">Encerrar caixa</span>
           </button>
 
-          <div className="bg-white p-8 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-4 text-slate-500 h-64 border border-slate-200 relative overflow-hidden group hover:border-slate-300 transition-colors cursor-pointer">
-            <div className="absolute top-4 right-4 text-xs font-bold bg-slate-100 px-2 py-1 rounded text-slate-500">
-              Em breve
-            </div>
+          <button
+            onClick={() => navigate('/consultas')}
+            className="bg-white p-8 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-4 text-slate-500 h-64 border border-slate-200 relative overflow-hidden hover:border-slate-300 transition-colors group"
+          >
             <Search size={48} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
             <span className="text-xl font-bold text-slate-700">Consultas</span>
-            <span className="text-slate-400 text-sm">Estoque e preços</span>
-          </div>
+            <span className="text-slate-400 text-sm">Vendas do dia</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/bilhetes')}
+            className="bg-white p-8 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-4 text-slate-500 h-64 border border-slate-200 relative overflow-hidden hover:border-slate-300 transition-colors group"
+          >
+            <Ticket size={48} className="text-slate-300 group-hover:text-slate-400 transition-colors" />
+            <span className="text-xl font-bold text-slate-700">Bilhete</span>
+            <span className="text-slate-400 text-sm">Vendas para o atacado</span>
+          </button>
         </div>
       </main>
+
+      {confirmandoFechamento && (
+        <ConfirmDialog
+          titulo="Fechar Caixa"
+          mensagem="Deseja realmente fechar o caixa?"
+          labelDestaque="Fundo de Troco (Abertura)"
+          valorDestaque={formatMoney(fundoDeTroco)}
+          variante="padrao"
+          confirmarLabel="FECHAR (ENTER)"
+          onConfirmar={confirmarFechamento}
+          onCancelar={() => setConfirmandoFechamento(false)}
+        />
+      )}
     </div>
   );
 }

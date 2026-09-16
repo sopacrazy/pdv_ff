@@ -12,6 +12,8 @@ export interface ItemVenda {
 export interface Pagamento {
   forma: 'Dinheiro' | 'Debito' | 'Credito' | 'PIX';
   valor: number;
+  valorRecebido?: number;
+  troco?: number;
 }
 
 export interface Venda {

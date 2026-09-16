@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
+import { QRCodeSVG } from 'qrcode.react';
 import { usePdvStore } from '../../../store/pdvStore';
 import { useToastStore } from '../../../store/toastStore';
 import { formatMoney, parseMoney } from '../../../utils/formatters';
+import { gerarPayloadPix } from '../../../utils/pix';
 import { Banknote, QrCode, CreditCard, Landmark, X, ArrowLeft, type LucideIcon } from 'lucide-react';
 
 type Forma = 'Dinheiro' | 'PIX' | 'Credito' | 'Debito';
@@ -15,12 +17,13 @@ const FORMAS: { forma: Forma; label: string; icon: LucideIcon; tecla: string }[]
 ];
 
 export const ModalPagamento = () => {
-  const { itens, setModalAtivo, finalizarVenda } = usePdvStore();
+  const { itens, setModalAtivo, finalizarVenda, vendaEmEdicaoId } = usePdvStore();
   const { mostrarToast } = useToastStore();
+  const mensagemSucesso = vendaEmEdicaoId ? 'Venda atualizada com sucesso' : 'Venda finalizada com sucesso';
 
   const total = itens.reduce((acc, i) => acc + i.valorTotal, 0);
 
-  const [etapa, setEtapa] = useState<'FORMA' | 'DINHEIRO'>('FORMA');
+  const [etapa, setEtapa] = useState<'FORMA' | 'DINHEIRO' | 'PIX'>('FORMA');
   const [formaIndex, setFormaIndex] = useState(0);
   const [valorInput, setValorInput] = useState('');
   const inputDinheiroRef = useRef<HTMLInputElement>(null);
@@ -28,6 +31,13 @@ export const ModalPagamento = () => {
 
   const valorRecebido = parseMoney(valorInput);
   const troco = valorRecebido - total;
+
+  const payloadPix = gerarPayloadPix({
+    chave: 'pix@fortfruit.com.br',
+    nome: 'FORT FRUIT',
+    cidade: 'BELEM',
+    valor: total / 100,
+  });
 
   useEffect(() => {
     if (etapa === 'DINHEIRO') {
@@ -37,13 +47,32 @@ export const ModalPagamento = () => {
     }
   }, [etapa]);
 
-  const escolherForma = (forma: Forma) => {
+  const escolherForma = async (forma: Forma) => {
     if (forma === 'Dinheiro') {
       setValorInput('');
       setEtapa('DINHEIRO');
+    } else if (forma === 'PIX') {
+      setEtapa('PIX');
     } else {
-      finalizarVenda([{ forma, valor: total }]);
-      mostrarToast('Venda finalizada com sucesso', 'sucesso');
+      const resultado = await finalizarVenda([{ forma, valor: total }]);
+      mostrarToast(
+        resultado.sucesso ? mensagemSucesso : `Falha ao salvar venda: ${resultado.erro}`,
+        resultado.sucesso ? 'sucesso' : 'erro'
+      );
+    }
+  };
+
+  const handleKeyDownPix = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setEtapa('FORMA');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const resultado = await finalizarVenda([{ forma: 'PIX', valor: total }]);
+      mostrarToast(
+        resultado.sucesso ? mensagemSucesso : `Falha ao salvar venda: ${resultado.erro}`,
+        resultado.sucesso ? 'sucesso' : 'erro'
+      );
     }
   };
 
@@ -80,7 +109,7 @@ export const ModalPagamento = () => {
     setValorInput(cents === 0 ? '' : formatMoney(cents));
   };
 
-  const handleKeyDownDinheiro = (e: React.KeyboardEvent) => {
+  const handleKeyDownDinheiro = async (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       setEtapa('FORMA');
@@ -90,9 +119,15 @@ export const ModalPagamento = () => {
         mostrarToast('Valor recebido é menor que o total', 'erro');
         return;
       }
-      finalizarVenda([{ forma: 'Dinheiro', valor: total }]);
+      const resultado = await finalizarVenda([
+        { forma: 'Dinheiro', valor: total, valorRecebido, troco: Math.max(troco, 0) },
+      ]);
+      if (!resultado.sucesso) {
+        mostrarToast(`Falha ao salvar venda: ${resultado.erro}`, 'erro');
+        return;
+      }
       mostrarToast(
-        troco > 0 ? `Venda finalizada. Troco: ${formatMoney(troco)}` : 'Venda finalizada com sucesso',
+        troco > 0 ? `${mensagemSucesso}. Troco: ${formatMoney(troco)}` : mensagemSucesso,
         'sucesso'
       );
     }
@@ -103,12 +138,12 @@ export const ModalPagamento = () => {
       <div
         ref={containerRef}
         className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col border border-slate-200 outline-none"
-        onKeyDown={etapa === 'FORMA' ? handleKeyDownForma : handleKeyDownDinheiro}
+        onKeyDown={etapa === 'FORMA' ? handleKeyDownForma : etapa === 'DINHEIRO' ? handleKeyDownDinheiro : handleKeyDownPix}
         tabIndex={-1}
       >
         <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl">
           <div className="flex items-center gap-3">
-            {etapa === 'DINHEIRO' && (
+            {etapa !== 'FORMA' && (
               <button
                 onClick={() => setEtapa('FORMA')}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -117,7 +152,7 @@ export const ModalPagamento = () => {
               </button>
             )}
             <h2 className="text-xl font-bold text-slate-800">
-              {etapa === 'FORMA' ? 'Forma de Pagamento' : 'Pagamento em Dinheiro'}
+              {etapa === 'FORMA' ? 'Forma de Pagamento' : etapa === 'DINHEIRO' ? 'Pagamento em Dinheiro' : 'Pagamento em PIX'}
             </h2>
           </div>
           <button onClick={() => setModalAtivo('NENHUM')} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -154,7 +189,7 @@ export const ModalPagamento = () => {
                 );
               })}
             </div>
-          ) : (
+          ) : etapa === 'DINHEIRO' ? (
             <div className="w-full flex flex-col items-center">
               <label className="text-slate-500 text-sm font-bold uppercase mb-2 tracking-wider">
                 Valor Recebido
@@ -178,6 +213,16 @@ export const ModalPagamento = () => {
                   {formatMoney(Math.max(troco, 0))}
                 </span>
               </div>
+            </div>
+          ) : (
+            <div className="w-full flex flex-col items-center">
+              <div className="p-4 bg-white border-2 border-slate-200 rounded-xl">
+                <QRCodeSVG value={payloadPix} size={220} />
+              </div>
+              <p className="text-slate-500 text-sm mt-4 text-center">
+                Aponte a câmera do celular para o QR Code para pagar
+              </p>
+              <p className="text-xs text-slate-400 mt-1">QR Code de exemplo</p>
             </div>
           )}
         </div>

@@ -1,9 +1,11 @@
 import { usePdvStore } from '../../store/pdvStore';
 import { formatMoney } from '../../utils/formatters';
 import { User } from 'lucide-react';
+import fortfruitLogo from '@/fortfruit-logo.png';
 
 export const PainelTotais = () => {
-  const { itens, cliente } = usePdvStore();
+  const { itens, cliente, clientePadrao } = usePdvStore();
+  const clienteExibido = cliente || clientePadrao;
 
   const ultimoItem = itens.length > 0 ? itens[itens.length - 1] : null;
   const totalItens = itens.reduce((acc, i) => acc + i.quantidade, 0);
@@ -14,6 +16,11 @@ export const PainelTotais = () => {
   return (
     <div className="w-[420px] shrink-0 bg-slate-50 flex flex-col p-6 gap-6 border-l border-slate-200 h-full">
       
+      {/* Logo da Empresa (fixa) */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center">
+        <img src={fortfruitLogo} alt="Fort Fruit" className="max-h-16 object-contain" />
+      </div>
+
       {/* Último Item Card */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col">
         <div className="text-slate-500 text-sm font-bold uppercase mb-2 tracking-wider">Último Item</div>
@@ -50,7 +57,7 @@ export const PainelTotais = () => {
       <div className="bg-slate-200/50 rounded-lg p-3 flex items-center gap-3 text-slate-700">
         <User size={20} className="text-slate-500" />
         <span className="text-sm truncate font-medium">
-          {cliente ? `${cliente.nome} (${cliente.cpf})` : 'VAREJINHO'}
+          {clienteExibido ? clienteExibido.nome : 'Carregando cliente...'}
         </span>
       </div>
 

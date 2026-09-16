@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { usePdvStore } from '../../../store/pdvStore';
-import { produtoServiceMock } from '../../../services/produtoService.mock';
+import { produtoService } from '../../../services/produtoService';
 import { Produto } from '../../../types/produto';
 import { formatMoney } from '../../../utils/formatters';
 import { Search, X } from 'lucide-react';
@@ -21,7 +21,7 @@ export const ModalBuscaProduto = () => {
   useEffect(() => {
     const buscar = async () => {
       if (busca.length >= 2) {
-        const res = await produtoServiceMock.buscarPorDescricao(busca);
+        const res = await produtoService.buscarPorDescricao(busca);
         setResultados(res);
         setSelectedIndex(0);
       } else {
