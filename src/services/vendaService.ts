@@ -47,6 +47,14 @@ export interface VendaDetalhe extends VendaResumo {
   }[];
 }
 
+export interface ResultadoEnvioProtheus {
+  sucesso: boolean;
+  status?: number;
+  resposta?: unknown;
+  payloadEnviado?: unknown;
+  erro?: string;
+}
+
 export const vendaService = {
   registrarVenda: async (venda: VendaParaSalvar): Promise<{ sucesso: boolean; id?: string; erro?: string }> => {
     try {
@@ -96,11 +104,37 @@ export const vendaService = {
     }
   },
 
+  resumoSemana: async (): Promise<{ data: string; quantidade: number; total: number }[]> => {
+    try {
+      const resp = await fetch('/api/vendas/resumo-semana');
+      if (!resp.ok) return [];
+      return resp.json();
+    } catch {
+      return [];
+    }
+  },
+
   buscarProximoCupom: async (): Promise<string | null> => {
     const resp = await fetch('/api/vendas/proximo-cupom');
     if (!resp.ok) return null;
     const corpo = await resp.json();
     return corpo.proximoCupom;
+  },
+
+  enviarProtheus: async (id: string, token: string): Promise<ResultadoEnvioProtheus> => {
+    try {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/enviar-protheus`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      if (!resp.ok && !corpo.status) {
+        return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+      }
+      return corpo;
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
   },
 
   excluirVenda: async (id: string): Promise<{ sucesso: boolean; erro?: string }> => {

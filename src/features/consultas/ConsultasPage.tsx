@@ -15,12 +15,14 @@ import {
   Landmark,
   TrendingUp,
   ShoppingBag,
+  Send,
   type LucideIcon,
 } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
-import { vendaService, VendaResumo, VendaDetalhe, StatusProtheus } from '../../services/vendaService';
+import { vendaService, VendaResumo, VendaDetalhe, StatusProtheus, ResultadoEnvioProtheus } from '../../services/vendaService';
 import { useToastStore } from '../../store/toastStore';
 import { usePdvStore } from '../../store/pdvStore';
+import { useAuthStore } from '../../store/authStore';
 import { Toast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 
@@ -56,11 +58,14 @@ export function ConsultasPage() {
   const navigate = useNavigate();
   const { mostrarToast } = useToastStore();
   const iniciarEdicaoVenda = usePdvStore((s) => s.iniciarEdicaoVenda);
+  const { usuario, token } = useAuthStore();
   const [vendas, setVendas] = useState<VendaResumo[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<VendaDetalhe | null>(null);
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
+  const [enviandoProtheusId, setEnviandoProtheusId] = useState<string | null>(null);
+  const [resultadosProtheus, setResultadosProtheus] = useState<Record<string, ResultadoEnvioProtheus>>({});
 
   const carregar = async () => {
     setCarregando(true);
@@ -99,6 +104,21 @@ export function ConsultasPage() {
     }
     iniciarEdicaoVenda(detalhe);
     navigate('/pdv');
+  };
+
+  const enviarAoProtheus = async (e: React.MouseEvent, venda: VendaResumo) => {
+    e.stopPropagation();
+    if (!token) return;
+    setEnviandoProtheusId(venda.id);
+    const resultado = await vendaService.enviarProtheus(venda.id, token);
+    setEnviandoProtheusId(null);
+    setResultadosProtheus((atual) => ({ ...atual, [venda.id]: resultado }));
+    if (resultado.sucesso) {
+      mostrarToast('Venda integrada ao Protheus', 'sucesso');
+      setVendas((atual) => atual.map((v) => (v.id === venda.id ? { ...v, statusProtheus: 'INTEGRADO' } : v)));
+    } else {
+      mostrarToast('Protheus recusou o envio — veja o detalhe da venda', 'erro');
+    }
   };
 
   const confirmarExclusao = async () => {
@@ -269,6 +289,16 @@ export function ConsultasPage() {
                         </td>
                         <td className="p-4">
                           <div className="flex items-center justify-end gap-1">
+                            {usuario?.papel === 'ADMIN' && (
+                              <button
+                                onClick={(e) => enviarAoProtheus(e, venda)}
+                                disabled={enviandoProtheusId === venda.id}
+                                className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40"
+                                title="Enviar ao Protheus (experimental)"
+                              >
+                                <Send size={16} className={enviandoProtheusId === venda.id ? 'animate-pulse' : ''} />
+                              </button>
+                            )}
                             <button
                               onClick={(e) => editarVenda(e, venda)}
                               className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -324,6 +354,30 @@ export function ConsultasPage() {
                                       </tbody>
                                     </table>
                                   </div>
+
+                                  {resultadosProtheus[venda.id] && (
+                                    <div
+                                      className={clsx(
+                                        'mt-4 rounded-xl border p-4 text-sm',
+                                        resultadosProtheus[venda.id].sucesso
+                                          ? 'bg-green-50 border-green-200 text-green-800'
+                                          : 'bg-red-50 border-red-200 text-red-800'
+                                      )}
+                                    >
+                                      <div className="font-bold mb-2">
+                                        {resultadosProtheus[venda.id].sucesso
+                                          ? 'Protheus aceitou o pedido'
+                                          : `Protheus recusou${resultadosProtheus[venda.id].status ? ` (HTTP ${resultadosProtheus[venda.id].status})` : ''}`}
+                                      </div>
+                                      <pre className="text-xs font-mono whitespace-pre-wrap break-all bg-white/60 rounded-lg p-3 border border-black/5 max-h-48 overflow-auto">
+                                        {JSON.stringify(
+                                          resultadosProtheus[venda.id].resposta ?? resultadosProtheus[venda.id].erro,
+                                          null,
+                                          2
+                                        )}
+                                      </pre>
+                                    </div>
+                                  )}
 
                                   {detalhe.formaPagamento === 'Dinheiro' && detalhe.valorRecebido != null && (
                                     <div className="flex gap-6 mt-4 px-1">

@@ -7,3 +7,8 @@ coverage/
 .env*
 !.env.example
 server/data/
+
+# Fontes internos do Protheus copiados pra referência local (lógica de negócio proprietária,
+# não vai pro repo público). O que a gente mesmo escreve fica em protheus-source/.
+/*.prw
+/*.PRW

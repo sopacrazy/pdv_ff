@@ -1,34 +1,78 @@
 import { create } from 'zustand';
-import { AuthState } from '../types/auth';
-import { authServiceMock } from '../services/authService.mock';
+import { Usuario } from '../types/usuario';
+import { usuarioService } from '../services/usuarioService';
 
-interface AuthStore extends AuthState {
-  login: (usuario: string, senha: string) => Promise<void>;
-  logout: () => void;
+interface AuthStore {
+  usuario: Usuario | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  restaurando: boolean;
+
+  // Derivados, mantidos pelo restante do app (PdvPage, pdvStore etc.)
+  vendedor: { codigo: string; nome: string } | null;
+  loja: string;
+  caixa: string;
+
+  login: (login: string, senha: string) => Promise<{ sucesso: boolean; erro?: string }>;
+  logout: () => Promise<void>;
+  restaurarSessao: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
-  vendedor: { codigo: '999', nome: 'OPERADOR PADRÃO' },
+function derivarVendedor(usuario: Usuario | null) {
+  if (!usuario) return null;
+  const codigo = usuario.protheusVendCodigo || usuario.protheusCodigo || usuario.id.slice(0, 8);
+  return { codigo, nome: usuario.nome };
+}
+
+export const useAuthStore = create<AuthStore>((set, get) => ({
+  usuario: null,
+  token: null,
+  isAuthenticated: false,
+  restaurando: true,
+  vendedor: null,
   loja: '01',
   caixa: '001',
-  isAuthenticated: true,
 
-  login: async (usuario, senha) => {
-    try {
-      const response = await authServiceMock.login(usuario, senha);
-      set({ 
-        vendedor: response.vendedor,
-        isAuthenticated: true 
-      });
-      localStorage.setItem('@pdv:token', response.token);
-    } catch (error) {
-      console.error('Erro no login', error);
-      throw error;
+  login: async (login, senha) => {
+    const resultado = await usuarioService.login(login, senha);
+    if (!resultado.sucesso || !resultado.token || !resultado.usuario) {
+      return { sucesso: false, erro: resultado.erro };
     }
+    localStorage.setItem('@pdv:token', resultado.token);
+    set({
+      usuario: resultado.usuario,
+      token: resultado.token,
+      isAuthenticated: true,
+      vendedor: derivarVendedor(resultado.usuario),
+    });
+    return { sucesso: true };
   },
 
-  logout: () => {
+  logout: async () => {
+    const { token } = get();
+    if (token) await usuarioService.logout(token);
     localStorage.removeItem('@pdv:token');
-    set({ vendedor: null, isAuthenticated: false });
-  }
+    set({ usuario: null, token: null, isAuthenticated: false, vendedor: null });
+  },
+
+  restaurarSessao: async () => {
+    const token = localStorage.getItem('@pdv:token');
+    if (!token) {
+      set({ restaurando: false });
+      return;
+    }
+    const usuario = await usuarioService.me(token);
+    if (!usuario) {
+      localStorage.removeItem('@pdv:token');
+      set({ restaurando: false });
+      return;
+    }
+    set({
+      usuario,
+      token,
+      isAuthenticated: true,
+      vendedor: derivarVendedor(usuario),
+      restaurando: false,
+    });
+  },
 }));

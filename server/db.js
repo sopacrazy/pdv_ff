@@ -1,7 +1,12 @@
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
+
+const ADMIN_LOGIN_PADRAO = process.env.ADMIN_LOGIN || 'admin';
+const ADMIN_SENHA_PADRAO = process.env.ADMIN_SENHA || 'admin123';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -86,9 +91,58 @@ export function getDb() {
       fundo_de_troco INTEGER NOT NULL DEFAULT 0,
       aberto_em TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id TEXT PRIMARY KEY,
+      nome TEXT NOT NULL,
+      login TEXT NOT NULL UNIQUE,
+      senha_hash TEXT NOT NULL,
+      papel TEXT NOT NULL DEFAULT 'OPERADOR',
+      ativo INTEGER NOT NULL DEFAULT 1,
+      criado_em TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessoes (
+      token TEXT PRIMARY KEY,
+      usuario_id TEXT NOT NULL REFERENCES usuarios(id),
+      criado_em TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS protheus_usuarios (
+      codigo TEXT PRIMARY KEY,
+      nome TEXT,
+      email TEXT,
+      atualizado_em TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS protheus_vendedores (
+      filial TEXT NOT NULL,
+      codigo TEXT NOT NULL,
+      nome TEXT,
+      atualizado_em TEXT,
+      PRIMARY KEY (filial, codigo)
+    );
   `);
 
   instancia.prepare('INSERT OR IGNORE INTO caixa_estado (id, aberto, fundo_de_troco) VALUES (1, 0, 0)').run();
+
+  // Cria o admin inicial se ainda não existir nenhum usuário.
+  const totalUsuarios = instancia.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n;
+  if (totalUsuarios === 0) {
+    instancia
+      .prepare(
+        'INSERT INTO usuarios (id, nome, login, senha_hash, papel, ativo, criado_em) VALUES (?, ?, ?, ?, ?, 1, ?)'
+      )
+      .run(
+        randomUUID(),
+        'Administrador',
+        ADMIN_LOGIN_PADRAO,
+        bcrypt.hashSync(ADMIN_SENHA_PADRAO, 10),
+        'ADMIN',
+        new Date().toISOString()
+      );
+    console.log(`[db] Usuário admin inicial criado — login: "${ADMIN_LOGIN_PADRAO}" senha: "${ADMIN_SENHA_PADRAO}" (troque depois de logar).`);
+  }
 
   // Soft delete (padrão D_E_L_E_T_ do Protheus: '' = ativo, '*' = excluído) e status de integração.
   garantirColuna(instancia, 'vendas', 'deletado', "TEXT NOT NULL DEFAULT ''");
@@ -98,6 +152,11 @@ export function getDb() {
   garantirColuna(instancia, 'produtos', 'segunda_unidade', 'TEXT');
   garantirColuna(instancia, 'produtos', 'fator_conversao', 'REAL');
   garantirColuna(instancia, 'vendas', 'editado_em', 'TEXT');
+  garantirColuna(instancia, 'usuarios', 'protheus_usr_codigo', 'TEXT');
+  garantirColuna(instancia, 'usuarios', 'protheus_usr_nome', 'TEXT');
+  garantirColuna(instancia, 'usuarios', 'protheus_vend_filial', 'TEXT');
+  garantirColuna(instancia, 'usuarios', 'protheus_vend_codigo', 'TEXT');
+  garantirColuna(instancia, 'usuarios', 'protheus_vend_nome', 'TEXT');
 
   return instancia;
 }
