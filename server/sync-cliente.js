@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import sql from 'mssql';
 import { fileURLToPath } from 'url';
 import { getDb } from './db.js';
@@ -9,7 +9,8 @@ SELECT
     RTRIM(A1_COD)    AS codigo,
     RTRIM(A1_LOJA)   AS loja,
     RTRIM(A1_NOME)   AS nome,
-    RTRIM(A1_CGC)    AS cpf_cnpj
+    RTRIM(A1_CGC)    AS cpf_cnpj,
+    RTRIM(A1_COND)   AS cond_pagamento
 FROM SA1140XX
 WHERE A1_FILIAL = '01'
     AND A1_COD = 'YDOVT3'
@@ -31,17 +32,19 @@ export async function syncClientePadrao() {
     const db = getDb();
 
     db.prepare(`
-      INSERT INTO clientes (codigo, loja, nome, cpf_cnpj, atualizado_em)
-      VALUES (@codigo, @loja, @nome, @cpf_cnpj, @atualizado_em)
+      INSERT INTO clientes (codigo, loja, nome, cpf_cnpj, cond_pagamento, atualizado_em)
+      VALUES (@codigo, @loja, @nome, @cpf_cnpj, @cond_pagamento, @atualizado_em)
       ON CONFLICT(codigo, loja) DO UPDATE SET
         nome = excluded.nome,
         cpf_cnpj = excluded.cpf_cnpj,
+        cond_pagamento = excluded.cond_pagamento,
         atualizado_em = excluded.atualizado_em
     `).run({
       codigo: linha.codigo,
       loja: linha.loja,
       nome: linha.nome,
       cpf_cnpj: linha.cpf_cnpj,
+      cond_pagamento: linha.cond_pagamento,
       atualizado_em: agora,
     });
 

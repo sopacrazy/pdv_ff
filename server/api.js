@@ -1,9 +1,12 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
+import fs from 'node:fs';
 import bcrypt from 'bcryptjs';
 import { getDb } from './db.js';
 import { autenticar, encerrarSessao, paraUsuarioFrontend, autenticarMiddleware, exigirAdminMiddleware } from './auth.js';
-import { montarPayloadVenda, enviarVendaProtheus } from './protheus-rest.js';
+import { prepararVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
+import { pareceFalhaDeRede } from './protheus-4sales-test.js';
+import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES } from './protheus-4sales-test.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
 
@@ -43,6 +46,8 @@ function paraVendaResumo(linha) {
     criadoEm: linha.criado_em,
     editadoEm: linha.editado_em,
     statusProtheus: linha.status_protheus,
+    bilheteProtheus: linha.bilhete_protheus,
+    resultadoProtheus: linha.resultado_protheus ? JSON.parse(linha.resultado_protheus) : null,
     valorRecebido: linha.valor_recebido,
     troco: linha.troco,
   };
@@ -57,6 +62,50 @@ export function iniciarApi() {
   });
 
   // --- Autenticação ---
+
+  // Teste isolado do contrato recebido do fornecedor; nunca altera status de vendas locais.
+  const carregarTeste = () => JSON.parse(fs.readFileSync(new URL('./data/4sales-teste.json', import.meta.url), 'utf8'));
+  const bancoTeste = () => {
+    const db = getDb();
+    db.exec(`CREATE TABLE IF NOT EXISTS testes_4sales (
+      chave TEXT PRIMARY KEY, iniciado_em TEXT NOT NULL, resultado TEXT
+    )`);
+    return db;
+  };
+  app.get('/api/protheus/4sales-teste', autenticarMiddleware, exigirAdminMiddleware, (req, res) => {
+    try {
+      const documento = carregarTeste();
+      const preparado = prepararTeste4Sales(documento);
+      const chave = `${preparado.resumo.tenant}:${preparado.resumo.id}`;
+      const anterior = bancoTeste().prepare('SELECT iniciado_em, resultado FROM testes_4sales WHERE chave = ?').get(chave);
+      res.json({ documento, resumo: preparado.resumo, url: URL_TESTE_4SALES, enviado: !!anterior,
+        resultado: anterior?.resultado ? JSON.parse(anterior.resultado) : null });
+    } catch (erro) { res.status(422).json({ erro: erro.code === 'ENOENT' ? 'Arquivo de teste não carregado no servidor.' : erro.message }); }
+  });
+  app.post('/api/protheus/4sales-teste', autenticarMiddleware, exigirAdminMiddleware, async (req, res) => {
+    let preparado, db, chave;
+    try {
+      const documento = carregarTeste();
+      // A prévia aprovada na tela deve corresponder exatamente ao arquivo atual.
+      if (JSON.stringify(req.body.documento) !== JSON.stringify(documento)) throw new Error('O arquivo mudou. Recarregue a prévia antes de enviar.');
+      preparado = prepararTeste4Sales(documento);
+      if (!process.env.PROTHEUS_REST_USER || !process.env.PROTHEUS_REST_PASSWORD) throw new Error('Credenciais REST não configuradas.');
+      db = bancoTeste();
+      chave = `${preparado.resumo.tenant}:${preparado.resumo.id}`;
+      const gravado = db.prepare('INSERT OR IGNORE INTO testes_4sales (chave, iniciado_em) VALUES (?, ?)').run(chave, new Date().toISOString());
+      if (!gravado.changes) {
+        res.status(409).json({ erro: 'Este pedido já teve uma tentativa. Confira o resultado e o Protheus antes de repetir.' });
+        return;
+      }
+    } catch (erro) { res.status(422).json({ erro: erro.message }); return; }
+    try {
+      const resultado = await enviarTeste4Sales(preparado);
+      db.prepare('UPDATE testes_4sales SET resultado = ? WHERE chave = ?').run(JSON.stringify(resultado), chave);
+      res.json(resultado);
+    } catch (erro) {
+      res.status(500).json({ erro: erro.message, resultadoDesconhecido: true });
+    }
+  });
 
   app.post('/api/auth/login', (req, res) => {
     const { login, senha } = req.body || {};
@@ -250,7 +299,7 @@ export function iniciarApi() {
   app.get('/api/cliente-padrao', (req, res) => {
     const db = getDb();
     const linha = db.prepare('SELECT * FROM clientes ORDER BY atualizado_em DESC LIMIT 1').get();
-    res.json(linha ? { nome: linha.nome, cpf: linha.cpf_cnpj } : null);
+    res.json(linha ? { nome: linha.nome, cpf: linha.cpf_cnpj, condicaoPagamento: linha.cond_pagamento || null } : null);
   });
 
   app.get('/api/caixa', (req, res) => {
@@ -318,6 +367,11 @@ export function iniciarApi() {
       res.status(400).json({ erro: 'Venda inválida: sem itens.' });
       return;
     }
+    const itemSemPreco = venda.itens.find((item) => !item.valorUnitario || item.valorUnitario <= 0);
+    if (itemSemPreco) {
+      res.status(400).json({ erro: `Produto sem preço: ${itemSemPreco.produto?.descricao || itemSemPreco.produto?.codigo || 'item da venda'}.` });
+      return;
+    }
 
     const db = getDb();
     const agora = new Date();
@@ -382,9 +436,15 @@ export function iniciarApi() {
       res.status(400).json({ erro: 'Venda inválida: sem itens.' });
       return;
     }
+    const itemSemPreco = venda.itens.find((item) => !item.valorUnitario || item.valorUnitario <= 0);
+    if (itemSemPreco) {
+      res.status(400).json({ erro: `Produto sem preço: ${itemSemPreco.produto?.descricao || itemSemPreco.produto?.codigo || 'item da venda'}.` });
+      return;
+    }
 
     const db = getDb();
-    const existente = db.prepare('SELECT id FROM vendas WHERE id = ?').get(req.params.id);
+    const existente = db.prepare('SELECT * FROM vendas WHERE id = ?').get(req.params.id);
+    if (existente && existente.status_protheus !== 'LOCAL') return res.status(409).json({ erro: 'Venda enviada ou em conferência não pode ser editada.' });
     if (!existente) {
       res.status(404).json({ erro: 'Venda não encontrada.' });
       return;
@@ -483,7 +543,8 @@ export function iniciarApi() {
 
   app.delete('/api/vendas/:id', (req, res) => {
     const db = getDb();
-    const venda = db.prepare('SELECT id FROM vendas WHERE id = ?').get(req.params.id);
+    const venda = db.prepare('SELECT * FROM vendas WHERE id = ?').get(req.params.id);
+    if (venda && venda.status_protheus !== 'LOCAL') return res.status(409).json({ erro: 'Venda enviada ou em conferência não pode ser excluída.' });
     if (!venda) {
       res.status(404).json({ erro: 'Venda não encontrada.' });
       return;
@@ -492,28 +553,53 @@ export function iniciarApi() {
     res.json({ sucesso: true });
   });
 
-  // Envio manual (experimental) da venda pro Protheus via API REST — formato do corpo ainda
-  // não confirmado pelo Protheus, ver comentário em protheus-rest.js.
-  app.post('/api/vendas/:id/enviar-protheus', autenticarMiddleware, exigirAdminMiddleware, async (req, res) => {
+  // Reserva persistente: nenhuma tentativa remota é repetida automaticamente.
+  // Qualquer usuário autenticado (operador de caixa ou admin) pode disparar o envio —
+  // o PDV chama isso automaticamente ao finalizar a venda, não é mais uma ação exclusiva de admin.
+  app.post('/api/vendas/:id/enviar-protheus', autenticarMiddleware, async (req, res) => {
     const db = getDb();
-    const venda = db.prepare('SELECT * FROM vendas WHERE id = ?').get(req.params.id);
-    if (!venda) {
-      res.status(404).json({ erro: 'Venda não encontrada.' });
-      return;
+    // Modo "rápido": usado pelo PDV ao finalizar a venda, com timeout curto pra não travar o caixa
+    // esperando uma resposta remota; o envio manual pela tela de Consultas usa o timeout normal.
+    const rapido = req.query.rapido === '1';
+    const opcoes = rapido ? { timeoutMs: 15000 } : undefined;
+    const venda = db.prepare("SELECT * FROM vendas WHERE id = ? AND deletado = ''").get(req.params.id);
+    if (!venda) return res.status(404).json({ sucesso: false, erro: 'Venda não encontrada.' });
+    if (venda.status_protheus !== 'LOCAL') return res.status(409).json({ sucesso: false, erro: 'Venda já enviada ou em conferência. Consulte o retorno registrado.' });
+    const reservada = db.prepare("UPDATE vendas SET status_protheus = 'PREPARANDO' WHERE id = ? AND status_protheus = 'LOCAL'").run(venda.id);
+    if (!reservada.changes) return res.status(409).json({ sucesso: false, erro: 'Envio já em andamento.' });
+    let preparado;
+    try {
+      const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(venda.id);
+      const vendedores = db.prepare('SELECT * FROM usuarios WHERE nome = ?').all(venda.operador);
+      if (vendedores.length !== 1) throw new Error('Operador não identificado de forma única. Confira Usuários.');
+      preparado = await prepararVenda4Sales(venda, itens, vendedores[0], opcoes);
+    } catch (erro) {
+      db.prepare("UPDATE vendas SET status_protheus = 'LOCAL' WHERE id = ? AND status_protheus = 'PREPARANDO'").run(venda.id);
+      return res.status(422).json({ sucesso: false, erro: erro.message, semInternet: rapido && pareceFalhaDeRede(erro) });
     }
-
-    const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(req.params.id);
-    const cliente = db.prepare('SELECT * FROM clientes ORDER BY atualizado_em DESC LIMIT 1').get();
-    const vendedorUsuario = db.prepare('SELECT * FROM usuarios WHERE nome = ?').get(venda.operador);
-
-    const payload = montarPayloadVenda({ venda, itens, cliente, vendedorUsuario });
-    const resultado = await enviarVendaProtheus(payload);
-
-    if (resultado.sucesso) {
-      db.prepare("UPDATE vendas SET status_protheus = 'INTEGRADO' WHERE id = ?").run(req.params.id);
+    db.prepare("UPDATE vendas SET status_protheus = 'CONFERIR', payload_protheus = ?, resultado_protheus = ? WHERE id = ?").run(JSON.stringify(preparado), JSON.stringify({ sucesso: false, erro: 'Envio iniciado. Aguarde; se interrompido, confira no Protheus.' }), venda.id);
+    try {
+      const resultado = await enviarVenda4Sales(preparado, opcoes);
+      db.prepare('UPDATE vendas SET status_protheus = ?, bilhete_protheus = ?, resultado_protheus = ? WHERE id = ?').run(resultado.sucesso ? 'INTEGRADO' : 'CONFERIR', resultado.bilhete, JSON.stringify(resultado), venda.id);
+      res.json(resultado);
+    } catch (erro) {
+      res.status(500).json({ sucesso: false, erro: 'Resultado não confirmado. Consulte o Protheus antes de novo envio.' });
     }
+  });
 
-    res.json(resultado);
+  // Não existe consulta automática pra confirmar se um envio "CONFERIR" (resultado desconhecido,
+  // ex: timeout) realmente chegou no Protheus — quem confirma isso olhando o ERP é o admin.
+  // Exige o número do bilhete como prova de que a conferência manual foi feita de verdade.
+  app.post('/api/vendas/:id/marcar-integrado', autenticarMiddleware, exigirAdminMiddleware, (req, res) => {
+    const db = getDb();
+    const venda = db.prepare("SELECT * FROM vendas WHERE id = ? AND deletado = ''").get(req.params.id);
+    if (!venda) return res.status(404).json({ sucesso: false, erro: 'Venda não encontrada.' });
+    if (venda.status_protheus === 'LOCAL') return res.status(409).json({ sucesso: false, erro: 'Esta venda ainda não foi enviada ao Protheus.' });
+    if (venda.status_protheus === 'INTEGRADO') return res.status(409).json({ sucesso: false, erro: 'Esta venda já está marcada como integrada.' });
+    const bilhete = typeof req.body?.bilhete === 'string' ? req.body.bilhete.trim() : '';
+    if (!bilhete) return res.status(400).json({ sucesso: false, erro: 'Informe o número do bilhete confirmado no Protheus.' });
+    db.prepare("UPDATE vendas SET status_protheus = 'INTEGRADO', bilhete_protheus = ? WHERE id = ?").run(bilhete, venda.id);
+    res.json({ sucesso: true });
   });
 
   app.listen(PORTA, () => {

@@ -1,6 +1,7 @@
 export interface ClientePadrao {
   nome: string;
   cpf: string;
+  condicaoPagamento?: string | null;
 }
 
 export const clienteService = {

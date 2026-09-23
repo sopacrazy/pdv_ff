@@ -10,7 +10,9 @@ export interface ItemVenda {
 }
 
 export interface Pagamento {
-  forma: 'Dinheiro' | 'Debito' | 'Credito' | 'PIX';
+  // 'Dinheiro' | 'Debito' | 'Credito' | 'PIX' no pagamento manual,
+  // ou o código da condição de pagamento do cadastro do cliente (ex: A1_COND) no fluxo automático.
+  forma: string;
   valor: number;
   valorRecebido?: number;
   troco?: number;

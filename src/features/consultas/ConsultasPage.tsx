@@ -16,6 +16,7 @@ import {
   TrendingUp,
   ShoppingBag,
   Send,
+  CheckCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
@@ -46,10 +47,10 @@ const StatusBadge = ({ status }: { status: StatusProtheus }) => {
         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap',
         integrado ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
       )}
-      title={integrado ? 'Já integrado ao Protheus' : 'Salvo somente local'}
+      title={integrado ? 'Já integrado ao Protheus' : status === 'LOCAL' ? 'Salvo somente local' : 'Envio em andamento ou aguardando conferência no Protheus'}
     >
       <span className={clsx('w-1.5 h-1.5 rounded-full', integrado ? 'bg-red-500' : 'bg-green-500')} />
-      {integrado ? 'Integrado' : 'Local'}
+      {integrado ? 'Integrado' : status === 'LOCAL' ? 'Local' : status === 'PREPARANDO' ? 'Validando' : 'Conferir Protheus'}
     </span>
   );
 };
@@ -109,15 +110,45 @@ export function ConsultasPage() {
   const enviarAoProtheus = async (e: React.MouseEvent, venda: VendaResumo) => {
     e.stopPropagation();
     if (!token) return;
+    if (venda.statusProtheus === 'INTEGRADO') {
+      mostrarToast('Esta venda já foi integrada ao Protheus', 'info');
+      return;
+    }
+    if (venda.statusProtheus !== 'LOCAL') {
+      mostrarToast(`Envio já em andamento para esta venda (status: ${venda.statusProtheus})`, 'info');
+      return;
+    }
     setEnviandoProtheusId(venda.id);
     const resultado = await vendaService.enviarProtheus(venda.id, token);
     setEnviandoProtheusId(null);
+    const atualizada = await vendaService.buscarVenda(venda.id);
+    if (atualizada) setVendas((atual) => atual.map(v => v.id === venda.id ? atualizada : v));
     setResultadosProtheus((atual) => ({ ...atual, [venda.id]: resultado }));
     if (resultado.sucesso) {
       mostrarToast('Venda integrada ao Protheus', 'sucesso');
       setVendas((atual) => atual.map((v) => (v.id === venda.id ? { ...v, statusProtheus: 'INTEGRADO' } : v)));
     } else {
-      mostrarToast('Protheus recusou o envio — veja o detalhe da venda', 'erro');
+      mostrarToast('Envio não confirmado — veja o detalhe da venda', 'erro');
+    }
+  };
+
+  const marcarIntegrado = async (e: React.MouseEvent, venda: VendaResumo) => {
+    e.stopPropagation();
+    if (!token) return;
+    if (venda.statusProtheus === 'LOCAL' || venda.statusProtheus === 'INTEGRADO') return;
+    // Não existe consulta automática pra saber se um envio "Conferir Protheus" (resultado
+    // desconhecido, ex: timeout) realmente chegou lá — por isso pedimos o número do bilhete
+    // como confirmação de que alguém checou no Protheus de verdade antes de marcar.
+    const bilhete = window.prompt(
+      `Confirme no Protheus que o Cupom ${venda.numeroCupom} foi integrado e informe o número do bilhete:`
+    );
+    if (!bilhete || !bilhete.trim()) return;
+    const resultado = await vendaService.marcarIntegrado(venda.id, token, bilhete.trim());
+    if (resultado.sucesso) {
+      mostrarToast('Venda marcada como integrada', 'sucesso');
+      setVendas((atual) => atual.map((v) => (v.id === venda.id ? { ...v, statusProtheus: 'INTEGRADO', bilheteProtheus: bilhete.trim() } : v)));
+    } else {
+      mostrarToast(`Falha ao marcar como integrada: ${resultado.erro}`, 'erro');
     }
   };
 
@@ -177,7 +208,6 @@ export function ConsultasPage() {
           Atualizar
         </button>
       </header>
-
       <main className="flex-1 p-8 max-w-6xl mx-auto w-full">
         <div className="grid grid-cols-3 gap-6 mb-6">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center gap-4">
@@ -260,7 +290,7 @@ export function ConsultasPage() {
                         onClick={() => alternarExpandido(venda.id)}
                         className={clsx(
                           'border-b border-slate-100 cursor-pointer transition-colors',
-                          expandido ? 'bg-blue-50/60' : 'hover:bg-slate-50'
+                          enviandoProtheusId === venda.id ? 'bg-indigo-50/60' : expandido ? 'bg-blue-50/60' : 'hover:bg-slate-50'
                         )}
                       >
                         <td className="p-4 font-mono text-sm text-slate-400">
@@ -282,7 +312,14 @@ export function ConsultasPage() {
                           </span>
                         </td>
                         <td className="p-4">
-                          <StatusBadge status={venda.statusProtheus} />
+                          {enviandoProtheusId === venda.id ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-indigo-100 text-indigo-700">
+                              <RefreshCw size={12} className="animate-spin" />
+                              Enviando...
+                            </span>
+                          ) : (
+                            <StatusBadge status={venda.statusProtheus} />
+                          )}
                         </td>
                         <td className="p-4 text-right font-bold tabular-nums text-slate-800">
                           {formatMoney(venda.total)}
@@ -292,11 +329,26 @@ export function ConsultasPage() {
                             {usuario?.papel === 'ADMIN' && (
                               <button
                                 onClick={(e) => enviarAoProtheus(e, venda)}
-                                disabled={enviandoProtheusId === venda.id}
+                                disabled={enviandoProtheusId !== null || venda.statusProtheus === 'INTEGRADO'}
                                 className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40"
-                                title="Enviar ao Protheus (experimental)"
+                                title={
+                                  venda.statusProtheus === 'INTEGRADO'
+                                    ? 'Venda já integrada ao Protheus'
+                                    : enviandoProtheusId !== null
+                                    ? 'Aguarde o envio em andamento terminar'
+                                    : 'Efetivar bilhete na base teste (condição do cadastro do cliente · cliente YDOVT3/01 · tabela 015)'
+                                }
                               >
                                 <Send size={16} className={enviandoProtheusId === venda.id ? 'animate-pulse' : ''} />
+                              </button>
+                            )}
+                            {usuario?.papel === 'ADMIN' && (venda.statusProtheus === 'CONFERIR' || venda.statusProtheus === 'PREPARANDO') && (
+                              <button
+                                onClick={(e) => marcarIntegrado(e, venda)}
+                                className="p-2 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                                title="Marcar como integrada (depois de confirmar o bilhete no Protheus)"
+                              >
+                                <CheckCheck size={16} />
                               </button>
                             )}
                             <button

@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import cron from 'node-cron';
 import { syncProdutos } from './sync-produtos.js';
 import { syncClientePadrao } from './sync-cliente.js';

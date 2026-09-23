@@ -153,6 +153,8 @@ export const PdvPage = () => {
     }
   };
 
+  const itemSemPreco = itens.find((item) => !item.valorUnitario || item.valorUnitario <= 0);
+
   // Atalhos Globais
   const semModalAberto = isCaixaAberto && modalAtivo === 'NENHUM';
   useAtalhos({
@@ -174,7 +176,12 @@ export const PdvPage = () => {
       }
     },
     'F1': () => {
-      if (semModalAberto && itens.length > 0) setModalAtivo('PAGAMENTO');
+      if (!semModalAberto || itens.length === 0) return;
+      if (itemSemPreco) {
+        mostrarToast(`Não é possível finalizar: ${itemSemPreco.produto.descricao} está sem preço`, 'erro');
+        return;
+      }
+      setModalAtivo('PAGAMENTO');
     },
     'F9': () => {
       if (semModalAberto && itens.length === 0) setModalAtivo('BUSCA_VENDA');
@@ -193,10 +200,10 @@ export const PdvPage = () => {
 
   const ShortcutChip = ({ k, label, disabled }: { k: string; label: string; disabled?: boolean }) => (
     <div className={clsx(
-      "flex items-center gap-2 px-3 py-1.5 rounded-md font-bold text-sm transition-opacity whitespace-nowrap",
+      "flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs transition-opacity whitespace-nowrap",
       disabled ? "bg-slate-100 text-slate-400 opacity-70" : "bg-slate-100 text-slate-700"
     )}>
-      <span className={clsx("px-1.5 py-0.5 rounded text-xs", disabled ? "bg-slate-200 text-slate-400" : "bg-slate-300 text-slate-800")}>{k}</span>
+      <span className={clsx("px-1 py-0.5 rounded text-[10px]", disabled ? "bg-slate-200 text-slate-400" : "bg-slate-300 text-slate-800")}>{k}</span>
       {label}
     </div>
   );
@@ -296,39 +303,39 @@ export const PdvPage = () => {
       </main>
 
       {/* RODAPÉ */}
-      <footer className="h-14 shrink-0 bg-white flex items-center px-4 gap-3 overflow-x-auto border-t border-slate-200">
+      <footer className="min-h-12 shrink-0 bg-white flex flex-wrap items-center px-3 py-1.5 gap-1.5 border-t border-slate-200">
         <ShortcutChip k="F2" label="Buscar Produto" disabled={!isCaixaAberto} />
         <ShortcutChip k="F3" label="Quantidade" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
         <ShortcutChip k="F4" label="Desconto" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
         <ShortcutChip k="DEL" label="Cancelar Item" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
         <ShortcutChip k="F6" label="Cliente" disabled={!isCaixaAberto} />
-        <ShortcutChip k="F1" label="Finalizar Venda" disabled={!isCaixaAberto || itens.length === 0} />
+        <ShortcutChip k="F1" label="Finalizar Venda" disabled={!isCaixaAberto || itens.length === 0 || !!itemSemPreco} />
         <ShortcutChip k="F9" label="Buscar Venda" disabled={!isCaixaAberto || itens.length > 0} />
         <ShortcutChip k="F12" label="Cancelar Cupom" disabled={!isCaixaAberto || itens.length === 0} />
         <ShortcutChip k="F8" label="Fechar Caixa" disabled={!isCaixaAberto || itens.length > 0} />
         <ShortcutChip k="ESC" label="Sair do PDV" disabled={!isCaixaAberto} />
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md font-bold text-sm whitespace-nowrap bg-slate-100 text-slate-500"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs whitespace-nowrap bg-slate-100 text-slate-500"
             title={
               ultimaSincronizacao
                 ? `Última sincronização com o Protheus: ${formatadorSyncCompleto.format(ultimaSincronizacao)}`
                 : 'Ainda não sincronizou com o Protheus'
             }
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={13} />
             {ultimaSincronizacao ? formatadorSync.format(ultimaSincronizacao) : 'Sem sincronização'}
           </div>
 
           <div
             className={clsx(
-              'flex items-center gap-2 px-3 py-1.5 rounded-md font-bold text-sm whitespace-nowrap',
+              'flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs whitespace-nowrap',
               online ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
             )}
             title={online ? 'Conectado ao servidor local' : 'Trabalhando offline — usando cache local'}
           >
-            {online ? <Wifi size={16} /> : <WifiOff size={16} />}
+            {online ? <Wifi size={14} /> : <WifiOff size={14} />}
             {online ? 'Online' : 'Offline'}
           </div>
         </div>

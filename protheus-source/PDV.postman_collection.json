@@ -1,0 +1,123 @@
+{
+  "info": {
+    "name": "PDV Fort Fruit - bilhete e pedido",
+    "description": "Publicar os fontes e preparar o dicionario conforme README-PDVBIL.md. Inclusao sem efetivacao. Preencher variaveis com cadastros reais da base teste.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{usuario}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{senha}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://177.67.71.212:9990/rest"
+    },
+    {
+      "key": "usuario",
+      "value": ""
+    },
+    {
+      "key": "senha",
+      "value": ""
+    },
+    {
+      "key": "idVendaPdv",
+      "value": "ebf14746-0853-4f67-95ca-e88640519a10"
+    },
+    {
+      "key": "empresa",
+      "value": ""
+    },
+    {
+      "key": "filial",
+      "value": ""
+    },
+    {
+      "key": "armazem",
+      "value": ""
+    },
+    {
+      "key": "data",
+      "value": ""
+    },
+    {
+      "key": "cliente",
+      "value": ""
+    },
+    {
+      "key": "loja",
+      "value": ""
+    },
+    {
+      "key": "vendedor",
+      "value": ""
+    },
+    {
+      "key": "condicaoPagamento",
+      "value": ""
+    },
+    {
+      "key": "tabelaPreco",
+      "value": ""
+    },
+    {
+      "key": "produto",
+      "value": ""
+    },
+    {
+      "key": "quantidade",
+      "value": "1"
+    },
+    {
+      "key": "valorUnitario",
+      "value": "10"
+    },
+    {
+      "key": "total",
+      "value": "10"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 - Consultar publicacao e contexto",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/PDVFORTFRUIT/status"
+      }
+    },
+    {
+      "name": "2 - Incluir SZ4/SZ5 e pedido sem efetivar",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/PDVFORTFRUIT/pedido",
+        "body": {
+          "mode": "raw",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
+          "raw": "{\n  \"idVendaPdv\": \"{{idVendaPdv}}\",\n  \"empresa\": \"{{empresa}}\",\n  \"filial\": \"{{filial}}\",\n  \"armazem\": \"{{armazem}}\",\n  \"data\": \"{{data}}\",\n  \"cliente\": \"{{cliente}}\",\n  \"loja\": \"{{loja}}\",\n  \"vendedor\": \"{{vendedor}}\",\n  \"condicaoPagamento\": \"{{condicaoPagamento}}\",\n  \"tabelaPreco\": \"{{tabelaPreco}}\",\n  \"observacao\": \"Homologacao PDV\",\n  \"total\": {{total}},\n  \"itens\": [{\"produto\": \"{{produto}}\", \"quantidade\": {{quantidade}}, \"valorUnitario\": {{valorUnitario}}, \"valorTotal\": {{total}}}]\n}"
+        }
+      }
+    }
+  ]
+}

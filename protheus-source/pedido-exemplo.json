@@ -1,0 +1,18 @@
+{
+  "idVendaPdv": "ebf14746-0853-4f67-95ca-e88640519a10",
+  "empresa": "14",
+  "filial": "01",
+  "armazem": "01",
+  "data": "20260922",
+  "cliente": "TESTE",
+  "loja": "01",
+  "vendedor": "TESTE",
+  "condicaoPagamento": "001",
+  "tabelaPreco": "015",
+  "numeroCupomPdv": "000123",
+  "observacao": "Homologacao PDV - cupom 000123",
+  "total": 10,
+  "itens": [
+    { "produto": "TESTE", "quantidade": 1, "valorUnitario": 10, "valorTotal": 10 }
+  ]
+}

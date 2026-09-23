@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import sql from 'mssql';
 import { fileURLToPath } from 'url';
 import { getDb } from './db.js';

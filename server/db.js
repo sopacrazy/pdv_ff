@@ -158,6 +158,10 @@ export function getDb() {
   garantirColuna(instancia, 'usuarios', 'protheus_vend_codigo', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_nome', 'TEXT');
 
+  garantirColuna(instancia, 'vendas', 'bilhete_protheus', 'TEXT');
+  garantirColuna(instancia, 'vendas', 'resultado_protheus', 'TEXT');
+  garantirColuna(instancia, 'vendas', 'payload_protheus', 'TEXT');
+  garantirColuna(instancia, 'clientes', 'cond_pagamento', 'TEXT');
   return instancia;
 }
 

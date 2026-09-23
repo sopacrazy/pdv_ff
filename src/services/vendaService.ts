@@ -15,7 +15,7 @@ export interface VendaParaSalvar {
   troco?: number;
 }
 
-export type StatusProtheus = 'LOCAL' | 'INTEGRADO';
+export type StatusProtheus = 'LOCAL' | 'INTEGRADO' | 'PREPARANDO' | 'CONFERIR';
 
 export interface VendaResumo {
   id: string;
@@ -32,6 +32,8 @@ export interface VendaResumo {
   criadoEm: string;
   editadoEm: string | null;
   statusProtheus: StatusProtheus;
+  bilheteProtheus?: string;
+  resultadoProtheus?: ResultadoEnvioProtheus;
   valorRecebido: number | null;
   troco: number | null;
 }
@@ -53,6 +55,7 @@ export interface ResultadoEnvioProtheus {
   resposta?: unknown;
   payloadEnviado?: unknown;
   erro?: string;
+  semInternet?: boolean;
 }
 
 export const vendaService = {
@@ -121,14 +124,32 @@ export const vendaService = {
     return corpo.proximoCupom;
   },
 
-  enviarProtheus: async (id: string, token: string): Promise<ResultadoEnvioProtheus> => {
+  enviarProtheus: async (id: string, token: string, opcoes?: { rapido?: boolean }): Promise<ResultadoEnvioProtheus> => {
     try {
-      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/enviar-protheus`, {
+      const query = opcoes?.rapido ? '?rapido=1' : '';
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/enviar-protheus${query}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
       const corpo = await resp.json().catch(() => ({}));
       if (!resp.ok && !corpo.status) {
+        return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}`, semInternet: corpo.semInternet };
+      }
+      return corpo;
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
+  },
+
+  marcarIntegrado: async (id: string, token: string, bilhete: string): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/marcar-integrado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bilhete }),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
         return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
       }
       return corpo;

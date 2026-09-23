@@ -14,8 +14,8 @@ interface PdvState {
   cupomNumero: string;
   itens: ItemVenda[];
   itemSelecionadoId: string | null;
-  cliente: { nome: string; cpf: string } | null;
-  clientePadrao: { nome: string; cpf: string } | null;
+  cliente: { nome: string; cpf: string; condicaoPagamento?: string | null } | null;
+  clientePadrao: { nome: string; cpf: string; condicaoPagamento?: string | null } | null;
   modalAtivo: ModalType;
   vendaEmEdicaoId: string | null;
 
@@ -24,7 +24,7 @@ interface PdvState {
   fecharCaixa: () => Promise<void>;
   carregarEstadoCaixa: () => Promise<void>;
   abrirVenda: () => void;
-  definirClientePadrao: (cliente: { nome: string; cpf: string }) => void;
+  definirClientePadrao: (cliente: { nome: string; cpf: string; condicaoPagamento?: string | null }) => void;
   definirCupomNumero: (numero: string) => void;
   adicionarItem: (produto: Produto, quantidade: number) => void;
   alterarQuantidade: (id: string, quantidade: number) => void;
@@ -34,7 +34,7 @@ interface PdvState {
   selecionarProximo: () => void;
   setModalAtivo: (modal: ModalType) => void;
   cancelarCupom: () => Promise<void>;
-  finalizarVenda: (pagamentos: Pagamento[]) => Promise<{ sucesso: boolean; erro?: string }>;
+  finalizarVenda: (pagamentos: Pagamento[]) => Promise<{ sucesso: boolean; erro?: string; id?: string }>;
   iniciarEdicaoVenda: (venda: VendaDetalhe) => void;
   cancelarEdicaoVenda: () => Promise<void>;
 }
@@ -234,6 +234,9 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       return resultado;
     }
 
+    // Ao editar, o PUT não devolve id (já é conhecido); ao criar, vem do POST.
+    const idDaVenda: string | undefined = vendaEmEdicaoId ?? (resultado as { id?: string }).id;
+
     if (vendaEmEdicaoId) {
       set({ itens: [], itemSelecionadoId: null, cliente: null, modalAtivo: 'NENHUM', vendaEmEdicaoId: null });
       const proximo = await vendaService.buscarProximoCupom();
@@ -249,6 +252,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       });
     }
 
-    return resultado;
+    return { ...resultado, id: idDaVenda };
   },
+
 }));
