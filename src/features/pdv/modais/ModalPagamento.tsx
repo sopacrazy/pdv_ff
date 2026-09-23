@@ -11,10 +11,9 @@ const CONDICOES: { id: 'PIX' | 'A_VISTA'; label: string; codigo: string; icon: L
   { id: 'A_VISTA', label: 'À Vista', codigo: '001', icon: Banknote, tecla: '2' },
 ];
 
-export const ModalPagamento = () => {
-  const { itens, setModalAtivo, finalizarVenda, vendaEmEdicaoId } = usePdvStore();
+export const ModalPagamento = ({ aoFinalizarImprimir }: { aoFinalizarImprimir: (id: string) => void }) => {
+  const { itens, setModalAtivo, finalizarVenda } = usePdvStore();
   const { mostrarToast } = useToastStore();
-  const mensagemSucesso = vendaEmEdicaoId ? 'Venda atualizada com sucesso' : 'Venda finalizada com sucesso';
 
   const total = itens.reduce((acc, i) => acc + i.valorTotal, 0);
 
@@ -42,9 +41,12 @@ export const ModalPagamento = () => {
       return;
     }
     mostrarToast(
-      dados?.troco && dados.troco > 0 ? `${mensagemSucesso}. Troco: ${formatMoney(dados.troco)}` : mensagemSucesso,
+      dados?.troco && dados.troco > 0
+        ? `Venda finalizada com sucesso. Troco: ${formatMoney(dados.troco)}`
+        : 'Venda finalizada com sucesso',
       'sucesso'
     );
+    if (resultado.id) aoFinalizarImprimir(resultado.id);
   };
 
   const escolherCondicao = async (id: 'PIX' | 'A_VISTA') => {

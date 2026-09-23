@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import bcrypt from 'bcryptjs';
 import { getDb } from './db.js';
 import { autenticar, encerrarSessao, paraUsuarioFrontend, autenticarMiddleware, exigirAdminMiddleware } from './auth.js';
-import { prepararVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
-import { pareceFalhaDeRede } from './protheus-4sales-test.js';
+import { enviarVendaAoProtheus } from './fila-protheus.js';
 import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES } from './protheus-4sales-test.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
@@ -17,6 +16,7 @@ function paraProdutoFrontend(linha) {
     unidade: linha.unidade || 'UN',
     segundaUnidade: linha.segunda_unidade || null,
     fatorConversao: linha.fator_conversao ?? null,
+    tipoConversao: linha.tipo_conversao || null,
     preco: linha.preco,
     codigoBarras: linha.codigo_barras || '',
     grupo: '',
@@ -46,6 +46,7 @@ function paraVendaResumo(linha) {
     criadoEm: linha.criado_em,
     editadoEm: linha.editado_em,
     statusProtheus: linha.status_protheus,
+    protheusAtualizadoEm: linha.protheus_atualizado_em,
     bilheteProtheus: linha.bilhete_protheus,
     resultadoProtheus: linha.resultado_protheus ? JSON.parse(linha.resultado_protheus) : null,
     valorRecebido: linha.valor_recebido,
@@ -383,14 +384,22 @@ export function iniciarApi() {
     `);
 
     const inserirItem = db.prepare(`
-      INSERT INTO venda_itens (id, venda_id, codigo_produto, descricao, quantidade, valor_unitario, desconto, valor_total)
-      VALUES (@id, @venda_id, @codigo_produto, @descricao, @quantidade, @valor_unitario, @desconto, @valor_total)
+      INSERT INTO venda_itens (id, venda_id, codigo_produto, descricao, quantidade, valor_unitario, desconto, valor_total, unidade)
+      VALUES (@id, @venda_id, @codigo_produto, @descricao, @quantidade, @valor_unitario, @desconto, @valor_total, @unidade)
     `);
 
+    // O número do cupom é decidido aqui, dentro da transação — nunca confiar no que o cliente
+    // mandou. Se a tela ficasse sem internet/backend por um instante (ex: reinício do servidor) e
+    // caísse num valor de fallback desatualizado, aceitar o número do cliente gravaria cupons
+    // fora de sequência (já aconteceu). Calculado e gravado atomicamente: nenhuma outra transação
+    // roda no meio, então não corre risco de dois caixas pegarem o mesmo número.
+    let numeroCupom;
     const salvar = db.transaction(() => {
+      const max = db.prepare('SELECT MAX(CAST(numero_cupom AS INTEGER)) AS max FROM vendas').get().max || 0;
+      numeroCupom = String(max + 1).padStart(6, '0');
       inserirVenda.run({
         id,
-        numero_cupom: venda.numeroCupom || '',
+        numero_cupom: numeroCupom,
         loja: venda.loja || '',
         caixa: venda.caixa || '',
         operador: venda.operador || '',
@@ -416,97 +425,16 @@ export function iniciarApi() {
           valor_unitario: item.valorUnitario,
           desconto: item.desconto,
           valor_total: item.valorTotal,
+          unidade: item.produto?.unidade || null,
         });
       }
     });
 
     try {
       salvar();
-      res.json({ sucesso: true, id });
+      res.json({ sucesso: true, id, numeroCupom });
     } catch (erro) {
       console.error(`[api] Falha ao salvar venda: ${erro.message}`);
-      res.status(500).json({ erro: erro.message });
-    }
-  });
-
-  app.put('/api/vendas/:id', (req, res) => {
-    const venda = req.body;
-
-    if (!venda || !Array.isArray(venda.itens) || venda.itens.length === 0) {
-      res.status(400).json({ erro: 'Venda inválida: sem itens.' });
-      return;
-    }
-    const itemSemPreco = venda.itens.find((item) => !item.valorUnitario || item.valorUnitario <= 0);
-    if (itemSemPreco) {
-      res.status(400).json({ erro: `Produto sem preço: ${itemSemPreco.produto?.descricao || itemSemPreco.produto?.codigo || 'item da venda'}.` });
-      return;
-    }
-
-    const db = getDb();
-    const existente = db.prepare('SELECT * FROM vendas WHERE id = ?').get(req.params.id);
-    if (existente && existente.status_protheus !== 'LOCAL') return res.status(409).json({ erro: 'Venda enviada ou em conferência não pode ser editada.' });
-    if (!existente) {
-      res.status(404).json({ erro: 'Venda não encontrada.' });
-      return;
-    }
-
-    const agora = new Date().toISOString();
-
-    const atualizarVenda = db.prepare(`
-      UPDATE vendas SET
-        cliente_nome = @cliente_nome,
-        cliente_cpf = @cliente_cpf,
-        subtotal = @subtotal,
-        desconto = @desconto,
-        total = @total,
-        forma_pagamento = @forma_pagamento,
-        valor_recebido = @valor_recebido,
-        troco = @troco,
-        editado_em = @editado_em
-      WHERE id = @id
-    `);
-
-    const apagarItens = db.prepare('DELETE FROM venda_itens WHERE venda_id = ?');
-    const inserirItem = db.prepare(`
-      INSERT INTO venda_itens (id, venda_id, codigo_produto, descricao, quantidade, valor_unitario, desconto, valor_total)
-      VALUES (@id, @venda_id, @codigo_produto, @descricao, @quantidade, @valor_unitario, @desconto, @valor_total)
-    `);
-
-    const salvar = db.transaction(() => {
-      atualizarVenda.run({
-        id: req.params.id,
-        cliente_nome: venda.cliente?.nome || null,
-        cliente_cpf: venda.cliente?.cpf || null,
-        subtotal: venda.subtotal || 0,
-        desconto: venda.desconto || 0,
-        total: venda.total || 0,
-        forma_pagamento: venda.formaPagamento || '',
-        valor_recebido: venda.valorRecebido ?? null,
-        troco: venda.troco ?? null,
-        editado_em: agora,
-      });
-
-      apagarItens.run(req.params.id);
-
-      for (const item of venda.itens) {
-        inserirItem.run({
-          id: randomUUID(),
-          venda_id: req.params.id,
-          codigo_produto: item.produto?.codigo || '',
-          descricao: item.produto?.descricao || '',
-          quantidade: item.quantidade,
-          valor_unitario: item.valorUnitario,
-          desconto: item.desconto,
-          valor_total: item.valorTotal,
-        });
-      }
-    });
-
-    try {
-      salvar();
-      res.json({ sucesso: true, id: req.params.id });
-    } catch (erro) {
-      console.error(`[api] Falha ao atualizar venda: ${erro.message}`);
       res.status(500).json({ erro: erro.message });
     }
   });
@@ -537,6 +465,7 @@ export function iniciarApi() {
         valorUnitario: item.valor_unitario,
         desconto: item.desconto,
         valorTotal: item.valor_total,
+        unidade: item.unidade,
       })),
     });
   });
@@ -553,38 +482,22 @@ export function iniciarApi() {
     res.json({ sucesso: true });
   });
 
-  // Reserva persistente: nenhuma tentativa remota é repetida automaticamente.
-  // Qualquer usuário autenticado (operador de caixa ou admin) pode disparar o envio —
-  // o PDV chama isso automaticamente ao finalizar a venda, não é mais uma ação exclusiva de admin.
+  // Reserva persistente: uma venda que falha (rede ou negócio) volta pra 'LOCAL' e fica na fila —
+  // o processarFilaProtheus (server.js, em segundo plano) retenta sozinho até conseguir.
+  // Qualquer usuário autenticado (operador de caixa ou admin) pode disparar o envio manualmente —
+  // o PDV também chama isso automaticamente ao finalizar a venda, não é mais uma ação exclusiva de admin.
   app.post('/api/vendas/:id/enviar-protheus', autenticarMiddleware, async (req, res) => {
     const db = getDb();
-    // Modo "rápido": usado pelo PDV ao finalizar a venda, com timeout curto pra não travar o caixa
-    // esperando uma resposta remota; o envio manual pela tela de Consultas usa o timeout normal.
+    // Modo "rápido": usado pelo PDV ao finalizar a venda. O disparo em si não trava o caixa (o
+    // front chama sem esperar a resposta), mas um timeout curto aqui ainda é ruim: a venda fica em
+    // CONFERIR (resultado desconhecido) até alguém checar o Protheus na mão — por segurança contra
+    // bilhete duplicado, isso nunca é reenviado sozinho (ver protheus-source/TESTE-4SALES-PDV.md).
+    // Já aconteceu de a Protheus levar mais de 60s pra responder mesmo tendo processado certinho —
+    // sem motivo pra esse prazo ser mais curto que o do envio manual, já que não trava ninguém.
     const rapido = req.query.rapido === '1';
-    const opcoes = rapido ? { timeoutMs: 15000 } : undefined;
-    const venda = db.prepare("SELECT * FROM vendas WHERE id = ? AND deletado = ''").get(req.params.id);
-    if (!venda) return res.status(404).json({ sucesso: false, erro: 'Venda não encontrada.' });
-    if (venda.status_protheus !== 'LOCAL') return res.status(409).json({ sucesso: false, erro: 'Venda já enviada ou em conferência. Consulte o retorno registrado.' });
-    const reservada = db.prepare("UPDATE vendas SET status_protheus = 'PREPARANDO' WHERE id = ? AND status_protheus = 'LOCAL'").run(venda.id);
-    if (!reservada.changes) return res.status(409).json({ sucesso: false, erro: 'Envio já em andamento.' });
-    let preparado;
-    try {
-      const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(venda.id);
-      const vendedores = db.prepare('SELECT * FROM usuarios WHERE nome = ?').all(venda.operador);
-      if (vendedores.length !== 1) throw new Error('Operador não identificado de forma única. Confira Usuários.');
-      preparado = await prepararVenda4Sales(venda, itens, vendedores[0], opcoes);
-    } catch (erro) {
-      db.prepare("UPDATE vendas SET status_protheus = 'LOCAL' WHERE id = ? AND status_protheus = 'PREPARANDO'").run(venda.id);
-      return res.status(422).json({ sucesso: false, erro: erro.message, semInternet: rapido && pareceFalhaDeRede(erro) });
-    }
-    db.prepare("UPDATE vendas SET status_protheus = 'CONFERIR', payload_protheus = ?, resultado_protheus = ? WHERE id = ?").run(JSON.stringify(preparado), JSON.stringify({ sucesso: false, erro: 'Envio iniciado. Aguarde; se interrompido, confira no Protheus.' }), venda.id);
-    try {
-      const resultado = await enviarVenda4Sales(preparado, opcoes);
-      db.prepare('UPDATE vendas SET status_protheus = ?, bilhete_protheus = ?, resultado_protheus = ? WHERE id = ?').run(resultado.sucesso ? 'INTEGRADO' : 'CONFERIR', resultado.bilhete, JSON.stringify(resultado), venda.id);
-      res.json(resultado);
-    } catch (erro) {
-      res.status(500).json({ sucesso: false, erro: 'Resultado não confirmado. Consulte o Protheus antes de novo envio.' });
-    }
+    const opcoes = rapido ? { timeoutMs: 150000 } : undefined;
+    const { http, ...corpo } = await enviarVendaAoProtheus(db, req.params.id, opcoes);
+    res.status(http).json(corpo);
   });
 
   // Não existe consulta automática pra confirmar se um envio "CONFERIR" (resultado desconhecido,

@@ -5,8 +5,12 @@ import { syncClientePadrao } from './sync-cliente.js';
 import { syncUsuariosProtheus } from './sync-usuarios-protheus.js';
 import { syncVendedoresProtheus } from './sync-vendedores-protheus.js';
 import { iniciarApi } from './api.js';
+import { processarFilaProtheus } from './fila-protheus.js';
 
 const CRON_EXPRESSAO = '*/15 * * * *';
+// Mais frequente que a sincronização de catálogo: uma venda parada na fila (sem internet no
+// momento da finalização) não pode esperar 15 minutos pra ser entregue ao Protheus.
+const CRON_EXPRESSAO_FILA_PROTHEUS = '*/2 * * * *';
 
 async function rodarSync(origem) {
   console.log(`[server] Iniciando sincronização (${origem})...`);
@@ -47,7 +51,10 @@ async function rodarSync(origem) {
 iniciarApi();
 
 await rodarSync('inicialização');
+await processarFilaProtheus('inicialização');
 
 cron.schedule(CRON_EXPRESSAO, () => rodarSync('agendada'));
+cron.schedule(CRON_EXPRESSAO_FILA_PROTHEUS, () => processarFilaProtheus('agendada'));
 
 console.log(`[server] Backend PDV rodando. Sincronização agendada a cada 15 minutos (${CRON_EXPRESSAO}).`);
+console.log(`[server] Fila de envio ao Protheus agendada a cada 2 minutos (${CRON_EXPRESSAO_FILA_PROTHEUS}).`);

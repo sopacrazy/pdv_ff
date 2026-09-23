@@ -12,7 +12,8 @@ SELECT
     DA1.DA1_PRC2UM          AS preco_kg,
     RTRIM(B1.B1_UM)         AS unidade,
     RTRIM(B1.B1_SEGUM)      AS segunda_unidade,
-    B1.B1_CONV              AS fator_conversao
+    B1.B1_CONV              AS fator_conversao,
+    RTRIM(B1.B1_TIPCONV)    AS tipo_conversao
 FROM DA1140 DA1
 LEFT JOIN SB1140 B1
     ON B1.B1_COD = DA1.DA1_CODPRO
@@ -32,8 +33,8 @@ export async function syncProdutos() {
 
     const db = getDb();
     const upsert = db.prepare(`
-      INSERT INTO produtos (codigo, descricao, codigo_barras, preco, preco_kg, unidade, segunda_unidade, fator_conversao, local_estoque, atualizado_em)
-      VALUES (@codigo, @descricao, @codigo_barras, @preco, @preco_kg, @unidade, @segunda_unidade, @fator_conversao, @local_estoque, @atualizado_em)
+      INSERT INTO produtos (codigo, descricao, codigo_barras, preco, preco_kg, unidade, segunda_unidade, fator_conversao, tipo_conversao, local_estoque, atualizado_em)
+      VALUES (@codigo, @descricao, @codigo_barras, @preco, @preco_kg, @unidade, @segunda_unidade, @fator_conversao, @tipo_conversao, @local_estoque, @atualizado_em)
       ON CONFLICT(codigo) DO UPDATE SET
         descricao = excluded.descricao,
         codigo_barras = excluded.codigo_barras,
@@ -42,6 +43,7 @@ export async function syncProdutos() {
         unidade = excluded.unidade,
         segunda_unidade = excluded.segunda_unidade,
         fator_conversao = excluded.fator_conversao,
+        tipo_conversao = excluded.tipo_conversao,
         local_estoque = excluded.local_estoque,
         atualizado_em = excluded.atualizado_em
     `);
@@ -59,6 +61,7 @@ export async function syncProdutos() {
           unidade: produto.unidade,
           segunda_unidade: produto.segunda_unidade,
           fator_conversao: produto.fator_conversao,
+          tipo_conversao: produto.tipo_conversao,
           local_estoque: null,
           atualizado_em: agora,
         });

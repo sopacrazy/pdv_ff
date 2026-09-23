@@ -11,17 +11,18 @@ import { produtoService } from '../../services/produtoService';
 import { clienteService } from '../../services/clienteService';
 import { vendaService } from '../../services/vendaService';
 import { Produto } from '../../types/produto';
-import { Wifi, WifiOff, Search, RefreshCw, Pencil, X } from 'lucide-react';
+import { Wifi, WifiOff, Search, RefreshCw } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
 
 import { ItensVenda } from './ItensVenda';
 import { PainelTotais } from './PainelTotais';
 import { Toast } from '../../components/Toast';
+import { ReciboTermico } from '../../components/ReciboTermico';
+import { useImpressaoCupom } from '../../hooks/useImpressaoCupom';
 
 // Modais
 import { ModalAberturaCaixa } from './modais/ModalAberturaCaixa';
 import { ModalBuscaProduto } from './modais/ModalBuscaProduto';
-import { ModalBuscaVenda } from './modais/ModalBuscaVenda';
 import { ModalQuantidade } from './modais/ModalQuantidade';
 import { ModalCancelamentoItem } from './modais/ModalCancelamentoItem';
 import { ModalCancelamentoCupom } from './modais/ModalCancelamentoCupom';
@@ -35,12 +36,14 @@ export const PdvPage = () => {
     isCaixaAberto,
     cupomNumero, modalAtivo, setModalAtivo, itens, itemSelecionadoId,
     selecionarAnterior, selecionarProximo, adicionarItem, definirClientePadrao, definirCupomNumero,
-    vendaEmEdicaoId, cancelarEdicaoVenda
   } = usePdvStore();
   const { mostrarToast } = useToastStore();
   const navigate = useNavigate();
   const online = useStatusConexao();
   const ultimaSincronizacao = useUltimaSincronizacao();
+  // Por enquanto isso abre o diálogo de impressão do navegador (salvar em PDF) a cada venda
+  // finalizada — quando o agent de impressão térmica existir, só o hook precisa mudar.
+  const { vendaParaImprimir, imprimirPorId } = useImpressaoCupom();
 
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [leitorValue, setLeitorValue] = useState('');
@@ -60,12 +63,9 @@ export const PdvPage = () => {
     clienteService.buscarClientePadrao().then((cliente) => {
       if (cliente) definirClientePadrao(cliente);
     });
-    // Se chegou aqui vindo de "Editar venda", o cupomNumero já foi setado pra o cupom que está sendo editado — não sobrescreve.
-    if (!vendaEmEdicaoId) {
-      vendaService.buscarProximoCupom().then((numero) => {
-        if (numero) definirCupomNumero(numero);
-      });
-    }
+    vendaService.buscarProximoCupom().then((numero) => {
+      if (numero) definirCupomNumero(numero);
+    });
   }, []);
 
   // Handlers do Leitor
@@ -99,6 +99,18 @@ export const PdvPage = () => {
     setLeitorValue('');
     setSugestoes([]);
   };
+
+  // Código interno completo (padrão do catálogo: 3 dígitos, ponto, 3 dígitos, ex: 104.004) —
+  // adiciona direto assim que fica completo, sem esperar Enter. Importante pro leitor de código de
+  // barras: ele "digita" rápido e nem sempre manda Enter depois; e agiliza quando o operador digita
+  // o código curto de cabeça (comum em hortifruti, produto sem etiqueta de barras).
+  useEffect(() => {
+    const { termo } = extrairQtdECodigo(leitorValue);
+    if (/^\d{3}\.\d{3}$/.test(termo)) {
+      processarLeitura();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leitorValue]);
 
   // Busca por descrição (like) enquanto digita, para achar produtos sem saber o código exato
   useEffect(() => {
@@ -183,14 +195,36 @@ export const PdvPage = () => {
       }
       setModalAtivo('PAGAMENTO');
     },
-    'F9': () => {
-      if (semModalAberto && itens.length === 0) setModalAtivo('BUSCA_VENDA');
-    },
     'F12': () => {
       if (semModalAberto && itens.length > 0) setModalAtivo('CANCELAR_CUPOM');
     },
     'ArrowUp': () => semModalAberto && sugestoes.length === 0 && selecionarAnterior(),
     'ArrowDown': () => semModalAberto && sugestoes.length === 0 && selecionarProximo(),
+    // Entra/percorre os campos de quantidade (1ª/2ª unidade) da linha selecionada, sem precisar de mouse.
+    // Seta pra direita: de fora entra na Qtd; da Qtd vai pra Qtd 2ª (se o produto tiver 2ª unidade).
+    'ArrowRight': () => {
+      if (!semModalAberto || sugestoes.length > 0 || !itemSelecionadoId) return;
+      const ativo = document.activeElement;
+      const campo1 = document.getElementById(`qtd-1-${itemSelecionadoId}`);
+      const campo2 = document.getElementById(`qtd-2-${itemSelecionadoId}`);
+      if (ativo === campo1) {
+        campo2?.focus();
+      } else if (ativo !== campo2) {
+        campo1?.focus();
+      }
+    },
+    // Seta pra esquerda: da Qtd 2ª volta pra Qtd; da Qtd volta pro campo de leitura.
+    'ArrowLeft': () => {
+      if (!semModalAberto || sugestoes.length > 0 || !itemSelecionadoId) return;
+      const ativo = document.activeElement;
+      const campo1 = document.getElementById(`qtd-1-${itemSelecionadoId}`);
+      const campo2 = document.getElementById(`qtd-2-${itemSelecionadoId}`);
+      if (ativo === campo2) {
+        campo1?.focus();
+      } else if (ativo === campo1) {
+        inputLeitorRef.current?.focus();
+      }
+    },
     'Escape': () => semModalAberto && navigate('/home'),
   });
 
@@ -209,7 +243,8 @@ export const PdvPage = () => {
   );
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-100 text-slate-900 font-sans">
+    <>
+    <div className="flex flex-col h-screen overflow-hidden bg-slate-100 text-slate-900 font-sans print:hidden">
       <Toast />
 
       {/* TOPO */}
@@ -218,29 +253,13 @@ export const PdvPage = () => {
           CAIXA <span className="text-slate-800">{caixa}</span> &middot; LOJA <span className="text-slate-800">{loja}</span>
         </div>
         <div className="font-black text-2xl text-slate-800 tracking-widest bg-slate-100 px-6 py-1.5 rounded-lg border border-slate-200">
-          CUPOM Nº <span className="text-blue-600">{cupomNumero}</span>
+          CUPOM Nº <span className="text-blue-600">{cupomNumero || '...'}</span>
         </div>
         <div className="text-right flex flex-col justify-center">
           <div className="font-bold text-sm uppercase tracking-wide text-slate-800">{vendedor?.nome}</div>
           <div className="text-sm text-slate-500 font-mono">{formatadorHora.format(horaAtual)}</div>
         </div>
       </header>
-
-      {vendaEmEdicaoId && (
-        <div className="shrink-0 bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-between text-amber-800">
-          <span className="flex items-center gap-2 text-sm font-bold">
-            <Pencil size={14} />
-            Editando Cupom {cupomNumero} — ao finalizar, substitui a venda original
-          </span>
-          <button
-            onClick={() => cancelarEdicaoVenda()}
-            className="flex items-center gap-1 text-sm font-bold hover:text-amber-950 transition-colors"
-          >
-            <X size={14} />
-            Cancelar edição
-          </button>
-        </div>
-      )}
 
       {/* CORPO */}
       <main className="flex-1 flex overflow-hidden">
@@ -310,7 +329,6 @@ export const PdvPage = () => {
         <ShortcutChip k="DEL" label="Cancelar Item" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
         <ShortcutChip k="F6" label="Cliente" disabled={!isCaixaAberto} />
         <ShortcutChip k="F1" label="Finalizar Venda" disabled={!isCaixaAberto || itens.length === 0 || !!itemSemPreco} />
-        <ShortcutChip k="F9" label="Buscar Venda" disabled={!isCaixaAberto || itens.length > 0} />
         <ShortcutChip k="F12" label="Cancelar Cupom" disabled={!isCaixaAberto || itens.length === 0} />
         <ShortcutChip k="F8" label="Fechar Caixa" disabled={!isCaixaAberto || itens.length > 0} />
         <ShortcutChip k="ESC" label="Sair do PDV" disabled={!isCaixaAberto} />
@@ -344,12 +362,14 @@ export const PdvPage = () => {
       {/* MODAIS */}
       {!isCaixaAberto && <ModalAberturaCaixa />}
       {modalAtivo === 'BUSCA_PRODUTO' && <ModalBuscaProduto />}
-      {modalAtivo === 'BUSCA_VENDA' && <ModalBuscaVenda />}
       {modalAtivo === 'QUANTIDADE' && <ModalQuantidade />}
       {modalAtivo === 'CANCELAR_ITEM' && <ModalCancelamentoItem />}
       {modalAtivo === 'CANCELAR_CUPOM' && <ModalCancelamentoCupom />}
-      {modalAtivo === 'PAGAMENTO' && <ModalPagamento />}
+      {modalAtivo === 'PAGAMENTO' && <ModalPagamento aoFinalizarImprimir={imprimirPorId} />}
       {modalAtivo === 'FECHAR_CAIXA' && <ModalFechamentoCaixa />}
     </div>
+    {/* Fora do wrapper print:hidden acima — só isto aparece quando a impressão dispara. */}
+    {vendaParaImprimir && <ReciboTermico venda={vendaParaImprimir} />}
+    </>
   );
 };

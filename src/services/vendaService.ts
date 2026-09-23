@@ -32,6 +32,7 @@ export interface VendaResumo {
   criadoEm: string;
   editadoEm: string | null;
   statusProtheus: StatusProtheus;
+  protheusAtualizadoEm?: string | null;
   bilheteProtheus?: string;
   resultadoProtheus?: ResultadoEnvioProtheus;
   valorRecebido: number | null;
@@ -46,6 +47,7 @@ export interface VendaDetalhe extends VendaResumo {
     valorUnitario: number;
     desconto: number;
     valorTotal: number;
+    unidade: string | null;
   }[];
 }
 
@@ -59,7 +61,9 @@ export interface ResultadoEnvioProtheus {
 }
 
 export const vendaService = {
-  registrarVenda: async (venda: VendaParaSalvar): Promise<{ sucesso: boolean; id?: string; erro?: string }> => {
+  // O número do cupom é decidido pelo servidor (contador atômico na mesma transação do insert) —
+  // o que a tela manda em `venda.numeroCupom` é só um preview, nunca é o valor realmente gravado.
+  registrarVenda: async (venda: VendaParaSalvar): Promise<{ sucesso: boolean; id?: string; numeroCupom?: string; erro?: string }> => {
     try {
       const resp = await fetch('/api/vendas', {
         method: 'POST',
@@ -71,7 +75,7 @@ export const vendaService = {
         return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
       }
       const corpo = await resp.json();
-      return { sucesso: true, id: corpo.id };
+      return { sucesso: true, id: corpo.id, numeroCupom: corpo.numeroCupom };
     } catch (erro) {
       return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
     }
@@ -90,23 +94,6 @@ export const vendaService = {
     return resp.json();
   },
 
-  atualizarVenda: async (id: string, venda: VendaParaSalvar): Promise<{ sucesso: boolean; erro?: string }> => {
-    try {
-      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(venda),
-      });
-      if (!resp.ok) {
-        const corpo = await resp.json().catch(() => ({}));
-        return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
-      }
-      return { sucesso: true };
-    } catch (erro) {
-      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
-    }
-  },
-
   resumoSemana: async (): Promise<{ data: string; quantidade: number; total: number }[]> => {
     try {
       const resp = await fetch('/api/vendas/resumo-semana');
@@ -117,11 +104,17 @@ export const vendaService = {
     }
   },
 
+  // Só uma prévia pro cabeçalho — quem decide o número de verdade é o servidor, no momento de
+  // salvar (ver registrarVenda). Uma falha aqui não pode travar nem inventar número nenhum.
   buscarProximoCupom: async (): Promise<string | null> => {
-    const resp = await fetch('/api/vendas/proximo-cupom');
-    if (!resp.ok) return null;
-    const corpo = await resp.json();
-    return corpo.proximoCupom;
+    try {
+      const resp = await fetch('/api/vendas/proximo-cupom');
+      if (!resp.ok) return null;
+      const corpo = await resp.json();
+      return corpo.proximoCupom;
+    } catch {
+      return null;
+    }
   },
 
   enviarProtheus: async (id: string, token: string, opcoes?: { rapido?: boolean }): Promise<ResultadoEnvioProtheus> => {

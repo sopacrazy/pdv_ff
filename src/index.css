@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+/* Recibo térmico (ver src/components/ReciboTermico.tsx): a página inteira vira só a bobina de
+   80mm quando a impressão é disparada — sem isso o navegador imprimiria em folha A4 normal.
+   Margem pequena em vez de zero: impressora térmica real quase sempre tem uma faixa nas bordas
+   que não imprime — com margem 0 o conteúdo cai exatamente nessa faixa e sai cortado. */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 2mm 3mm;
+  }
+  body {
+    margin: 0;
+  }
+}

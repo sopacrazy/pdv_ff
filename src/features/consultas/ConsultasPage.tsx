@@ -8,24 +8,24 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
-  Pencil,
   Banknote,
   QrCode,
   CreditCard,
   Landmark,
   TrendingUp,
   ShoppingBag,
-  Send,
   CheckCheck,
+  Printer,
   type LucideIcon,
 } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
-import { vendaService, VendaResumo, VendaDetalhe, StatusProtheus, ResultadoEnvioProtheus } from '../../services/vendaService';
+import { vendaService, VendaResumo, VendaDetalhe, StatusProtheus } from '../../services/vendaService';
 import { useToastStore } from '../../store/toastStore';
-import { usePdvStore } from '../../store/pdvStore';
 import { useAuthStore } from '../../store/authStore';
 import { Toast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { ReciboTermico } from '../../components/ReciboTermico';
+import { useImpressaoCupom } from '../../hooks/useImpressaoCupom';
 
 const ICONE_FORMA: Record<string, LucideIcon> = {
   Dinheiro: Banknote,
@@ -39,18 +39,39 @@ const IconeForma = ({ forma, size = 16 }: { forma: string; size?: number }) => {
   return <Icon size={size} />;
 };
 
-const StatusBadge = ({ status }: { status: StatusProtheus }) => {
+// 'CONFERIR' é gravado tanto no meio do envio (antes de saber o resultado, pra sobreviver a uma
+// queda no meio do caminho) quanto quando o resultado ficou mesmo indefinido (timeout, conexão
+// caiu). Só dá pra diferenciar pelo tempo: atualizado há pouco = ainda mandando; há um tempão =
+// realmente precisa conferir na mão. O prazo cobre o maior timeout de envio hoje (150s do envio
+// manual) com folga.
+const CONFERIR_EM_ANDAMENTO_MS = 180000;
+
+const StatusBadge = ({ status, atualizadoEm }: { status: StatusProtheus; atualizadoEm?: string | null }) => {
   const integrado = status === 'INTEGRADO';
+  const local = status === 'LOCAL';
+  const enviandoAgora =
+    status === 'PREPARANDO' ||
+    (status === 'CONFERIR' && !!atualizadoEm && Date.now() - new Date(atualizadoEm).getTime() < CONFERIR_EM_ANDAMENTO_MS);
+
+  if (enviandoAgora) {
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-indigo-100 text-indigo-700">
+        <RefreshCw size={12} className="animate-spin" />
+        Enviando...
+      </span>
+    );
+  }
+
   return (
     <span
       className={clsx(
         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap',
         integrado ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
       )}
-      title={integrado ? 'Já integrado ao Protheus' : status === 'LOCAL' ? 'Salvo somente local' : 'Envio em andamento ou aguardando conferência no Protheus'}
+      title={integrado ? 'Já integrado ao Protheus' : local ? 'Salvo somente local' : 'Sem confirmação da Protheus — confira manualmente antes de reenviar'}
     >
       <span className={clsx('w-1.5 h-1.5 rounded-full', integrado ? 'bg-red-500' : 'bg-green-500')} />
-      {integrado ? 'Integrado' : status === 'LOCAL' ? 'Local' : status === 'PREPARANDO' ? 'Validando' : 'Conferir Protheus'}
+      {integrado ? 'Integrado' : local ? 'Local' : 'Conferir Protheus'}
     </span>
   );
 };
@@ -58,15 +79,21 @@ const StatusBadge = ({ status }: { status: StatusProtheus }) => {
 export function ConsultasPage() {
   const navigate = useNavigate();
   const { mostrarToast } = useToastStore();
-  const iniciarEdicaoVenda = usePdvStore((s) => s.iniciarEdicaoVenda);
   const { usuario, token } = useAuthStore();
   const [vendas, setVendas] = useState<VendaResumo[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<VendaDetalhe | null>(null);
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
-  const [enviandoProtheusId, setEnviandoProtheusId] = useState<string | null>(null);
-  const [resultadosProtheus, setResultadosProtheus] = useState<Record<string, ResultadoEnvioProtheus>>({});
+  const { vendaParaImprimir, imprimirPorId } = useImpressaoCupom();
+
+  const imprimirVenda = async (e: React.MouseEvent, venda: VendaResumo) => {
+    e.stopPropagation();
+    const detalhe = await imprimirPorId(venda.id);
+    if (!detalhe) {
+      mostrarToast('Não foi possível carregar a venda para impressão', 'erro');
+    }
+  };
 
   const carregar = async () => {
     setCarregando(true);
@@ -78,6 +105,25 @@ export function ConsultasPage() {
   useEffect(() => {
     carregar();
   }, []);
+
+  // O envio ao Protheus agora roda em segundo plano (o PDV dispara sozinho ao finalizar, e o
+  // servidor tem uma fila que retenta as vendas paradas) — sem esse polling, o status na tela só
+  // mudava quando o operador saía e voltava pra Consultas pra buscar de novo.
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const lista = await vendaService.listarVendasDoDia();
+        setVendas(lista);
+        if (expandidoId) {
+          const venda = await vendaService.buscarVenda(expandidoId);
+          if (venda) setDetalhe(venda);
+        }
+      } catch {
+        // Falha de rede num ciclo de atualização silenciosa não deve incomodar a tela — tenta de novo no próximo.
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [expandidoId]);
 
   const alternarExpandido = async (id: string) => {
     if (expandidoId === id) {
@@ -94,42 +140,6 @@ export function ConsultasPage() {
   const pedirExclusao = (e: React.MouseEvent, venda: VendaResumo) => {
     e.stopPropagation();
     setVendaParaExcluir(venda);
-  };
-
-  const editarVenda = async (e: React.MouseEvent, venda: VendaResumo) => {
-    e.stopPropagation();
-    const detalhe = await vendaService.buscarVenda(venda.id);
-    if (!detalhe) {
-      mostrarToast('Não foi possível carregar a venda para edição', 'erro');
-      return;
-    }
-    iniciarEdicaoVenda(detalhe);
-    navigate('/pdv');
-  };
-
-  const enviarAoProtheus = async (e: React.MouseEvent, venda: VendaResumo) => {
-    e.stopPropagation();
-    if (!token) return;
-    if (venda.statusProtheus === 'INTEGRADO') {
-      mostrarToast('Esta venda já foi integrada ao Protheus', 'info');
-      return;
-    }
-    if (venda.statusProtheus !== 'LOCAL') {
-      mostrarToast(`Envio já em andamento para esta venda (status: ${venda.statusProtheus})`, 'info');
-      return;
-    }
-    setEnviandoProtheusId(venda.id);
-    const resultado = await vendaService.enviarProtheus(venda.id, token);
-    setEnviandoProtheusId(null);
-    const atualizada = await vendaService.buscarVenda(venda.id);
-    if (atualizada) setVendas((atual) => atual.map(v => v.id === venda.id ? atualizada : v));
-    setResultadosProtheus((atual) => ({ ...atual, [venda.id]: resultado }));
-    if (resultado.sucesso) {
-      mostrarToast('Venda integrada ao Protheus', 'sucesso');
-      setVendas((atual) => atual.map((v) => (v.id === venda.id ? { ...v, statusProtheus: 'INTEGRADO' } : v)));
-    } else {
-      mostrarToast('Envio não confirmado — veja o detalhe da venda', 'erro');
-    }
   };
 
   const marcarIntegrado = async (e: React.MouseEvent, venda: VendaResumo) => {
@@ -185,7 +195,8 @@ export function ConsultasPage() {
   const formatadorData = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+    <>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans print:hidden">
       <Toast />
       <header className="bg-white p-4 shadow-sm flex items-center justify-between border-b border-slate-200">
         <div className="flex items-center gap-4">
@@ -277,6 +288,7 @@ export function ConsultasPage() {
                   <th className="p-4">Cliente</th>
                   <th className="p-4">Pagamento</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4">Bilhete</th>
                   <th className="p-4 text-right">Total</th>
                   <th className="p-4 w-24"></th>
                 </tr>
@@ -290,7 +302,7 @@ export function ConsultasPage() {
                         onClick={() => alternarExpandido(venda.id)}
                         className={clsx(
                           'border-b border-slate-100 cursor-pointer transition-colors',
-                          enviandoProtheusId === venda.id ? 'bg-indigo-50/60' : expandido ? 'bg-blue-50/60' : 'hover:bg-slate-50'
+                          expandido ? 'bg-blue-50/60' : 'hover:bg-slate-50'
                         )}
                       >
                         <td className="p-4 font-mono text-sm text-slate-400">
@@ -312,36 +324,16 @@ export function ConsultasPage() {
                           </span>
                         </td>
                         <td className="p-4">
-                          {enviandoProtheusId === venda.id ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-indigo-100 text-indigo-700">
-                              <RefreshCw size={12} className="animate-spin" />
-                              Enviando...
-                            </span>
-                          ) : (
-                            <StatusBadge status={venda.statusProtheus} />
-                          )}
+                          <StatusBadge status={venda.statusProtheus} atualizadoEm={venda.protheusAtualizadoEm} />
+                        </td>
+                        <td className="p-4 font-mono text-sm text-slate-600">
+                          {venda.bilheteProtheus || <span className="text-slate-300">—</span>}
                         </td>
                         <td className="p-4 text-right font-bold tabular-nums text-slate-800">
                           {formatMoney(venda.total)}
                         </td>
                         <td className="p-4">
                           <div className="flex items-center justify-end gap-1">
-                            {usuario?.papel === 'ADMIN' && (
-                              <button
-                                onClick={(e) => enviarAoProtheus(e, venda)}
-                                disabled={enviandoProtheusId !== null || venda.statusProtheus === 'INTEGRADO'}
-                                className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40"
-                                title={
-                                  venda.statusProtheus === 'INTEGRADO'
-                                    ? 'Venda já integrada ao Protheus'
-                                    : enviandoProtheusId !== null
-                                    ? 'Aguarde o envio em andamento terminar'
-                                    : 'Efetivar bilhete na base teste (condição do cadastro do cliente · cliente YDOVT3/01 · tabela 015)'
-                                }
-                              >
-                                <Send size={16} className={enviandoProtheusId === venda.id ? 'animate-pulse' : ''} />
-                              </button>
-                            )}
                             {usuario?.papel === 'ADMIN' && (venda.statusProtheus === 'CONFERIR' || venda.statusProtheus === 'PREPARANDO') && (
                               <button
                                 onClick={(e) => marcarIntegrado(e, venda)}
@@ -352,19 +344,21 @@ export function ConsultasPage() {
                               </button>
                             )}
                             <button
-                              onClick={(e) => editarVenda(e, venda)}
-                              className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="Editar venda"
+                              onClick={(e) => imprimirVenda(e, venda)}
+                              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                              title="Imprimir cupom (impressora térmica)"
                             >
-                              <Pencil size={16} />
+                              <Printer size={16} />
                             </button>
-                            <button
-                              onClick={(e) => pedirExclusao(e, venda)}
-                              className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                              title="Excluir venda"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {venda.statusProtheus === 'LOCAL' && (
+                              <button
+                                onClick={(e) => pedirExclusao(e, venda)}
+                                className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                title="Excluir venda"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                             {expandido ? (
                               <ChevronUp size={16} className="text-slate-400" />
                             ) : (
@@ -376,7 +370,7 @@ export function ConsultasPage() {
 
                       {expandido && (
                         <tr className="bg-slate-50 border-b border-slate-100">
-                          <td colSpan={7} className="p-0">
+                          <td colSpan={8} className="p-0">
                             <div className="px-6 py-5">
                               {!detalhe ? (
                                 <div className="text-slate-400 text-sm py-2">Carregando itens...</div>
@@ -406,30 +400,6 @@ export function ConsultasPage() {
                                       </tbody>
                                     </table>
                                   </div>
-
-                                  {resultadosProtheus[venda.id] && (
-                                    <div
-                                      className={clsx(
-                                        'mt-4 rounded-xl border p-4 text-sm',
-                                        resultadosProtheus[venda.id].sucesso
-                                          ? 'bg-green-50 border-green-200 text-green-800'
-                                          : 'bg-red-50 border-red-200 text-red-800'
-                                      )}
-                                    >
-                                      <div className="font-bold mb-2">
-                                        {resultadosProtheus[venda.id].sucesso
-                                          ? 'Protheus aceitou o pedido'
-                                          : `Protheus recusou${resultadosProtheus[venda.id].status ? ` (HTTP ${resultadosProtheus[venda.id].status})` : ''}`}
-                                      </div>
-                                      <pre className="text-xs font-mono whitespace-pre-wrap break-all bg-white/60 rounded-lg p-3 border border-black/5 max-h-48 overflow-auto">
-                                        {JSON.stringify(
-                                          resultadosProtheus[venda.id].resposta ?? resultadosProtheus[venda.id].erro,
-                                          null,
-                                          2
-                                        )}
-                                      </pre>
-                                    </div>
-                                  )}
 
                                   {detalhe.formaPagamento === 'Dinheiro' && detalhe.valorRecebido != null && (
                                     <div className="flex gap-6 mt-4 px-1">
@@ -478,5 +448,8 @@ export function ConsultasPage() {
         />
       )}
     </div>
+    {/* Fora do wrapper print:hidden acima — só isto aparece quando a impressão dispara. */}
+    {vendaParaImprimir && <ReciboTermico venda={vendaParaImprimir} />}
+    </>
   );
 }

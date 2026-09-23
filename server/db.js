@@ -151,7 +151,12 @@ export function getDb() {
   garantirColuna(instancia, 'vendas', 'troco', 'INTEGER');
   garantirColuna(instancia, 'produtos', 'segunda_unidade', 'TEXT');
   garantirColuna(instancia, 'produtos', 'fator_conversao', 'REAL');
+  garantirColuna(instancia, 'produtos', 'tipo_conversao', 'TEXT');
   garantirColuna(instancia, 'vendas', 'editado_em', 'TEXT');
+  // Unidade do produto no momento da venda (ex: UN, KG) — guardada no item pra não depender do
+  // cadastro atual do produto ao imprimir/consultar uma venda antiga (se a unidade mudar depois no
+  // Protheus, o recibo de uma venda já feita continua mostrando a unidade certa daquele dia).
+  garantirColuna(instancia, 'venda_itens', 'unidade', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_usr_codigo', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_usr_nome', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_filial', 'TEXT');
@@ -161,6 +166,7 @@ export function getDb() {
   garantirColuna(instancia, 'vendas', 'bilhete_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'resultado_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'payload_protheus', 'TEXT');
+  garantirColuna(instancia, 'vendas', 'protheus_atualizado_em', 'TEXT');
   garantirColuna(instancia, 'clientes', 'cond_pagamento', 'TEXT');
   return instancia;
 }
