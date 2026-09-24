@@ -7,11 +7,14 @@ import { vendaService } from '../services/vendaService';
 import { caixaService } from '../services/caixaService';
 import { paraPrimeiraUnidade } from '../utils/unidades';
 
-export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'QUANTIDADE' | 'DESCONTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO' | 'CLIENTE' | 'FECHAR_CAIXA';
+export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'QUANTIDADE' | 'DESCONTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO' | 'CLIENTE';
 
 interface PdvState {
   isCaixaAberto: boolean;
   fundoDeTroco: number;
+  // AAAA-MM-DD adiantada manualmente (loja que opera de madrugada), ou null pra usar a data real.
+  // Só muda em qual dia a venda conta pro fechamento/Protheus — o horário exibido continua real.
+  dataOperacao: string | null;
   cupomNumero: string;
   itens: ItemVenda[];
   itemSelecionadoId: string | null;
@@ -23,6 +26,7 @@ interface PdvState {
   abrirCaixa: (valor: number) => Promise<void>;
   fecharCaixa: () => Promise<void>;
   carregarEstadoCaixa: () => Promise<void>;
+  definirDataOperacao: (data: string | null) => Promise<{ sucesso: boolean; erro?: string }>;
   abrirVenda: () => void;
   definirClientePadrao: (cliente: { nome: string; cpf: string; condicaoPagamento?: string | null }) => void;
   definirCupomNumero: (numero: string) => void;
@@ -43,6 +47,7 @@ const gerarId = () => Math.random().toString(36).substring(2, 9);
 export const usePdvStore = create<PdvState>((set, get) => ({
   isCaixaAberto: false,
   fundoDeTroco: 0,
+  dataOperacao: null,
   // Vazio até a tela confirmar com o servidor. Nunca usar um valor "chutado" aqui: se a busca do
   // próximo cupom falhar (ex: backend fora do ar), é melhor a tela ficar sem número por um
   // instante do que arriscar registrar uma venda com numeração errada (o servidor decide o número
@@ -75,8 +80,14 @@ export const usePdvStore = create<PdvState>((set, get) => ({
   carregarEstadoCaixa: async () => {
     const estado = await caixaService.buscarEstado();
     if (estado) {
-      set({ isCaixaAberto: estado.aberto, fundoDeTroco: estado.fundoDeTroco });
+      set({ isCaixaAberto: estado.aberto, fundoDeTroco: estado.fundoDeTroco, dataOperacao: estado.dataOperacao });
     }
+  },
+
+  definirDataOperacao: async (data) => {
+    const resultado = await caixaService.definirDataOperacao(data);
+    if (resultado.sucesso) set({ dataOperacao: data });
+    return resultado;
   },
 
   abrirVenda: () =>

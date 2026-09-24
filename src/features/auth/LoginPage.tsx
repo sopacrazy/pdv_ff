@@ -35,39 +35,34 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-white">
-      {/* PAINEL DE MARCA */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden bg-slate-50 items-center justify-center p-12">
-        <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emerald-400/20 blur-3xl" />
-        <div className="absolute top-1/3 -right-20 w-80 h-80 rounded-full bg-orange-400/20 blur-3xl" />
-        <div className="absolute -bottom-32 left-1/4 w-96 h-96 rounded-full bg-blue-400/20 blur-3xl" />
-
-        <div className="relative max-w-md">
+    <div className="min-h-screen bg-slate-100 font-sans flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden flex">
+        {/* PAINEL DE MARCA — mesmo escuro da sidebar, pra dar consistência com o resto do sistema */}
+        <div className="hidden lg:flex flex-1 flex-col justify-center bg-slate-900 p-12">
           <img src={fortfruitLogo} alt="Fort Fruit" className="h-14 object-contain mb-10" />
-          <h1 className="text-3xl font-bold text-slate-800 leading-tight mb-3">
+          <h1 className="text-3xl font-bold text-white leading-tight mb-3">
             O sistema de vendas
             <br />
             da Fort Fruit
           </h1>
-          <p className="text-slate-500 mb-10">
+          <p className="text-slate-400 mb-10">
             Feito sob medida para o nosso time vender, conferir caixa e acompanhar o movimento — em um só lugar.
           </p>
 
           <div className="flex flex-col gap-4">
             {DESTAQUES.map(({ icone: Icone, texto }) => (
               <div key={texto} className="flex items-center gap-3">
-                <div className="h-10 w-10 shrink-0 rounded-xl bg-white shadow-sm border border-slate-200/80 flex items-center justify-center text-blue-600">
+                <div className="h-10 w-10 shrink-0 rounded-xl bg-blue-500/20 flex items-center justify-center text-blue-300">
                   <Icone size={18} />
                 </div>
-                <p className="text-sm font-medium text-slate-600">{texto}</p>
+                <p className="text-sm font-medium text-slate-300">{texto}</p>
               </div>
             ))}
           </div>
         </div>
-      </div>
 
-      {/* FORMULÁRIO */}
-      <div className="flex-1 flex items-center justify-center p-6">
+        {/* FORMULÁRIO */}
+        <div className="flex-1 flex items-center justify-center p-6 sm:p-12">
         <form onSubmit={entrar} className="w-full max-w-sm flex flex-col">
           <img src={fortfruitLogo} alt="Fort Fruit" className="h-10 object-contain mb-8 lg:hidden self-center" />
 
@@ -126,6 +121,7 @@ export function LoginPage() {
             {carregando ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );

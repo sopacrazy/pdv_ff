@@ -168,6 +168,11 @@ export function getDb() {
   garantirColuna(instancia, 'vendas', 'payload_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'protheus_atualizado_em', 'TEXT');
   garantirColuna(instancia, 'clientes', 'cond_pagamento', 'TEXT');
+  // Data de operação (YYYY-MM-DD): quando setada, novas vendas gravam essa data em data_local (o
+  // "dia" que conta pro fechamento e é enviado ao Protheus) em vez da data real do relógio — usado
+  // pela loja que opera de madrugada e adianta a data no Protheus antes da virada. NULL = automático
+  // (usa a data real). Nunca afeta criado_em, que continua sendo o horário real da venda.
+  garantirColuna(instancia, 'caixa_estado', 'data_operacao', 'TEXT');
   return instancia;
 }
 

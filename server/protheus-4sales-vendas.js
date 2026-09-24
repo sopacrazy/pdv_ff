@@ -39,8 +39,17 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
   const condicaoPagamento = venda.forma_pagamento.trim();
   const paymentType = { id: condicaoPagamento, name: condicaoPagamento, paymentType: '1', portions: 1, averageDays: 1, financialAddition: 0, financialDiscount: 0, maximumValue: 0, minimumValue: 0, paymentMoreBusiness: false };
   const paymentMethods = { id: 'DEP ', name: 'DEPOSITO' };
+  // CONFIRMADO (cupom 000028, bilhete CAQZL1): o Protheus IGNORA este campo — a resposta veio com
+  // orderDate = data/hora real do relógio dele no momento do processamento, mesmo tendo enviado
+  // data_local adiantada. Ou seja, isto aqui não controla a data do documento no Protheus; quem
+  // faz isso é a data de sistema do próprio Protheus, mudada manualmente pelo operador de lá (ver
+  // "Data de operação" no PDV — essa sim controla o fechamento/relatórios locais, só isso).
+  // Mantido mesmo assim (enviar a data local com a hora real de criado_em) por ser inofensivo e
+  // documentar a intenção, caso o comportamento do 4Sales mude no futuro.
+  const horaReal = new Date(venda.criado_em).toISOString().split('T')[1];
+  const dataBilhete = `${venda.data_local}T${horaReal}`;
   return prepararTeste4Sales({ url: URL_TESTE_4SALES, method: 'post', headers: { TenantId: tenant, 'x-erp-module': 'FAT' }, body: {
-    _id: venda.id, date: venda.criado_em, operation: { id: '2', name: 'Bilhete' },
+    _id: venda.id, date: dataBilhete, operation: { id: '2', name: 'Bilhete' },
     subsidiary: { id: tenant, name: 'Operacao', companyName: 'FORT FRUIT LTDA' },
     client: { _id: 'YDOVT301', externalCode: 'YDOVT3', storeCode: '01', name: cliente.name || cliente.fantasy, priceTable, paymentType, paymentMethods, paymentForm: 'DEP', seller },
     seller, priceTable, paymentType, paymentMethods, items,

@@ -20,6 +20,7 @@ export const ModalPagamento = ({ aoFinalizarImprimir }: { aoFinalizarImprimir: (
   const [etapa, setEtapa] = useState<'ESCOLHA' | 'VALOR'>('ESCOLHA');
   const [condicaoIndex, setCondicaoIndex] = useState(0);
   const [valorInput, setValorInput] = useState('');
+  const [finalizando, setFinalizando] = useState(false);
   const inputValorRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -35,18 +36,28 @@ export const ModalPagamento = ({ aoFinalizarImprimir }: { aoFinalizarImprimir: (
   }, [etapa]);
 
   const finalizar = async (codigo: string, dados?: { valorRecebido?: number; troco?: number }) => {
-    const resultado = await finalizarVenda([{ forma: codigo, valor: total, ...dados }]);
-    if (!resultado.sucesso) {
-      mostrarToast(`Falha ao finalizar venda: ${resultado.erro}`, 'erro');
-      return;
+    // Trava contra clique duplo/Enter repetido enquanto a primeira chamada ainda está em voo —
+    // sem isso, duas invocações quase simultâneas criavam duas vendas distintas (cada requisição
+    // ganha seu próprio número de cupom no servidor, então não há como o backend detectar sozinho
+    // que é a mesma venda sendo enviada duas vezes).
+    if (finalizando) return;
+    setFinalizando(true);
+    try {
+      const resultado = await finalizarVenda([{ forma: codigo, valor: total, ...dados }]);
+      if (!resultado.sucesso) {
+        mostrarToast(`Falha ao finalizar venda: ${resultado.erro}`, 'erro');
+        return;
+      }
+      mostrarToast(
+        dados?.troco && dados.troco > 0
+          ? `Venda finalizada com sucesso. Troco: ${formatMoney(dados.troco)}`
+          : 'Venda finalizada com sucesso',
+        'sucesso'
+      );
+      if (resultado.id) aoFinalizarImprimir(resultado.id);
+    } finally {
+      setFinalizando(false);
     }
-    mostrarToast(
-      dados?.troco && dados.troco > 0
-        ? `Venda finalizada com sucesso. Troco: ${formatMoney(dados.troco)}`
-        : 'Venda finalizada com sucesso',
-      'sucesso'
-    );
-    if (resultado.id) aoFinalizarImprimir(resultado.id);
   };
 
   const escolherCondicao = async (id: 'PIX' | 'A_VISTA') => {
@@ -115,9 +126,13 @@ export const ModalPagamento = ({ aoFinalizarImprimir }: { aoFinalizarImprimir: (
       >
         <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl">
           <h2 className="text-xl font-bold text-slate-800">
-            {etapa === 'ESCOLHA' ? 'Finalizar Venda' : 'Pagamento à Vista'}
+            {finalizando ? 'Finalizando...' : etapa === 'ESCOLHA' ? 'Finalizar Venda' : 'Pagamento à Vista'}
           </h2>
-          <button onClick={() => setModalAtivo('NENHUM')} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <button
+            onClick={() => setModalAtivo('NENHUM')}
+            disabled={finalizando}
+            className="text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
             <X size={24} />
           </button>
         </div>
@@ -135,8 +150,9 @@ export const ModalPagamento = ({ aoFinalizarImprimir }: { aoFinalizarImprimir: (
                     key={c.id}
                     onClick={() => escolherCondicao(c.id)}
                     onMouseEnter={() => setCondicaoIndex(idx)}
+                    disabled={finalizando}
                     className={clsx(
-                      'flex flex-col items-center gap-2 py-6 rounded-xl border-2 font-bold text-base text-center transition-all',
+                      'flex flex-col items-center gap-2 py-6 rounded-xl border-2 font-bold text-base text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed',
                       condicaoIndex === idx
                         ? 'border-blue-500 bg-blue-50 text-blue-700 ring-4 ring-blue-500/20'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
@@ -162,7 +178,8 @@ export const ModalPagamento = ({ aoFinalizarImprimir }: { aoFinalizarImprimir: (
                 value={valorInput}
                 onChange={handleChangeValor}
                 placeholder="R$ 0,00"
-                className="w-full text-center bg-white border-2 border-blue-500 rounded-xl px-4 py-4 text-4xl font-bold tabular-nums text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/30"
+                disabled={finalizando}
+                className="w-full text-center bg-white border-2 border-blue-500 rounded-xl px-4 py-4 text-4xl font-bold tabular-nums text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/30 disabled:opacity-50"
               />
               <div className="w-full flex justify-between items-center mt-6 px-2">
                 <span className="text-slate-500 font-bold uppercase text-sm tracking-wider">Troco</span>

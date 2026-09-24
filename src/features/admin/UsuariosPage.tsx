@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { ArrowLeft, Plus, X, ShieldCheck, User as UserIcon, Power } from 'lucide-react';
+import { AppShell } from '../../components/AppShell';
 import { useAuthStore } from '../../store/authStore';
 import { useToastStore } from '../../store/toastStore';
 import { usuarioService } from '../../services/usuarioService';
@@ -302,9 +303,9 @@ export function UsuariosPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+    <AppShell rotaAtiva="/admin">
       <Toast />
-      <header className="bg-white p-4 shadow-sm flex items-center justify-between border-b border-slate-200">
+      <header className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/admin')}
@@ -326,9 +327,8 @@ export function UsuariosPage() {
         </button>
       </header>
 
-      <main className="flex-1 p-8 max-w-4xl mx-auto w-full">
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-          {carregando ? (
+      <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
+        {carregando ? (
             <div className="p-16 text-center text-slate-400">Carregando...</div>
           ) : (
             <table className="w-full text-left border-collapse">
@@ -413,12 +413,11 @@ export function UsuariosPage() {
               </tbody>
             </table>
           )}
-        </div>
-      </main>
+      </div>
 
       {modal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl flex flex-col border border-slate-200">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col border border-slate-200">
             <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-2xl">
               <h2 className="text-xl font-bold text-slate-800">{modal === 'CRIAR' ? 'Novo Usuário' : 'Editar Usuário'}</h2>
               <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -426,7 +425,7 @@ export function UsuariosPage() {
               </button>
             </div>
 
-            <div className="p-6 flex flex-col gap-4">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Nome</label>
                 <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className={inputCls} />
@@ -477,7 +476,7 @@ export function UsuariosPage() {
                 </div>
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
                   Usuário Protheus (SYS_USR) <span className="normal-case font-normal">(opcional)</span>
                 </label>
@@ -554,7 +553,7 @@ export function UsuariosPage() {
                 )}
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
                   Vendedor (SA3) <span className="normal-case font-normal">(opcional)</span>
                 </label>
@@ -680,6 +679,6 @@ export function UsuariosPage() {
           onCancelar={() => setUsuarioParaAlternar(null)}
         />
       )}
-    </div>
+    </AppShell>
   );
 }

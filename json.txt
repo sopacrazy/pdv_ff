@@ -1,0 +1,321 @@
+{
+	"body": {
+		"_id": "645",
+		"addition": 0,
+		"additions": [],
+		"blockedByStrategy": null,
+		"client": {
+			"_id": "YDOVB201",
+			"account": {
+				"id": "112.01.001          ",
+				"name": "DUPLICATAS A RECEBER"
+			},
+			"address": {
+				"cep": "68220000",
+				"city": {
+					"id": "PA04802",
+					"name": "MONTE ALEGRE",
+					"state": "PA"
+				},
+				"complement": "",
+				"neighborhood": "ZONA RURAL",
+				"state": {
+					"id": "PA",
+					"name": "PARA"
+				},
+				"street": "DISTRITO PA 254 KM 35 VILA SN"
+			},
+			"billingAddress": {
+				"cep": "",
+				"city": {
+					"id": "                 ",
+					"name": "",
+					"state": ""
+				},
+				"complement": "",
+				"neighborhood": "",
+				"state": {
+					"id": "  ",
+					"name": ""
+				},
+				"street": ""
+			},
+			"budgetUnity": "1 ",
+			"calcSuframa": null,
+			"carrier": null,
+			"citieSuframa": null,
+			"cityInscription": null,
+			"clientCnaeExternalCode": "4712-1/00",
+			"clientDiscount": 0,
+			"clientSegmentExternalCode": null,
+			"clientTicketDiscount": 0,
+			"clientType": {
+				"id": "R",
+				"name": "Revendedor"
+			},
+			"contact": "JURACI",
+			"contacts": [],
+			"contributor": null,
+			"cpfCnpj": "22198945000100",
+			"creditClass": null,
+			"creditLimit": null,
+			"creditLimiteDate": null,
+			"deliveryAddress": {
+				"cep": "",
+				"city": {
+					"id": "                                                              ",
+					"name": "",
+					"state": ""
+				},
+				"complement": "",
+				"neighborhood": "",
+				"state": {
+					"id": "  ",
+					"name": ""
+				},
+				"street": ""
+			},
+			"email": "MOREIRAJUCIANE@GMAIL.COM",
+			"ERPPrintOrder": "1 ",
+			"externalCode": "YDOVB2",
+			"ignoreMultiple": false,
+			"InvoicingType": "3 ",
+			"lastPurchaseDate": "2025-09-26T00:00:00.000Z",
+			"name": "22.198.945 JUCIANE MOREIRA DA FONSECA",
+			"nature": {
+				"id": "10101     ",
+				"name": "VENDAS CONFORME RELACAOO"
+			},
+			"paymentForm": "DEP",
+			"paymentMethods": {
+				"id": "DEP ",
+				"name": "DEPOSITO"
+			},
+			"paymentMoreBusiness": false,
+			"paymentType": {
+				"id": "033",
+				"name": "PIX"
+			},
+			"personType": {
+				"id": "J",
+				"name": "Juridica"
+			},
+			"phoneNumber": "93 91146153       ",
+			"priceTable": {
+				"id": "001",
+				"name": "TABELA GERAL"
+			},
+			"risk": "A",
+			"route": {
+				"id": "000037",
+				"name": "AM - MANAUS"
+			},
+			"seller": {
+				"id": "000014",
+				"name": "MAURO CUNHA"
+			},
+			"shippingType": null,
+			"shortName": "JUNIOR MARANHAO",
+			"stateInscription": "154822108",
+			"storeCode": "01",
+			"suframa": null,
+			"totalBudgets": 13,
+			"totalOrders": 11
+		},
+		"createdBy": {
+			"date": "2026-08-12T11:57:18.894Z",
+			"id": "68d6f0903a1b893f79f2ac50",
+			"name": "Cliente Teste"
+		},
+		"currency": {
+			"currency": "BRL",
+			"id": "1",
+			"locale": "pt-BR",
+			"name": "REAL"
+		},
+		"currencyConvert": false,
+		"currencyValue": 0,
+		"date": "2026-08-12T11:57:18.826Z",
+		"deliveryAddress": {
+			"cep": "68220000",
+			"city": {
+				"id": "PA04802",
+				"name": "MONTE ALEGRE",
+				"state": "PA"
+			},
+			"complement": "",
+			"neighborhood": "ZONA RURAL",
+			"state": {
+				"id": "PA",
+				"name": "PARA"
+			},
+			"street": "DISTRITO PA 254 KM 35 VILA SN"
+		},
+		"discount": 0,
+		"discountPercent": 0,
+		"discounts": [
+			{
+				"applyRule": "discount",
+				"discountOrAddition": 0,
+				"discountOrAdditionValue": 0,
+				"name": "Desconto nos itens"
+			}
+		],
+		"editedBy": {
+			"date": "2026-09-22T13:29:11.670Z",
+			"id": "68cbf9b76d79f915b5e40a50",
+			"name": "Pedro Cunha"
+		},
+		"editingBy": {
+			"date": "2026-09-22T13:29:03.258Z",
+			"id": "68cbf9b76d79f915b5e40a50",
+			"name": "Pedro Cunha"
+		},
+		"financialAddition": 0,
+		"financialDiscount": 0,
+		"isBudget": false,
+		"items": [
+			{
+				"description": "MACA FUJI CAT1 216  216",
+				"discount": 0,
+				"discountPercent": 0,
+				"firstUnitQuantity": 0,
+				"group": "FRUTA",
+				"index": 1,
+				"name": "MACA FUJI CAT1 216 216",
+				"original": 165,
+				"originalDiscount": 0,
+				"price": 165,
+				"priceFromTable": 165,
+				"product": "199.029",
+				"quantity": 5,
+				"rangePrices": [
+					{
+						"currency": {
+							"currency": "BRL",
+							"id": "1",
+							"locale": "pt-BR",
+							"name": "REAL"
+						},
+						"id": "001",
+						"maxQuantity": 999999.99,
+						"original": 165,
+						"value": 165
+					}
+				],
+				"secondUnitQuantity": 0,
+				"secondUnitValue": 0,
+				"stock": [
+					{
+						"batch": "",
+						"id": "14,01",
+						"name": "LOJA",
+						"validity": "00/00/00",
+						"value": 0,
+						"wharehouse": "01"
+					}
+				],
+				"technicalSpecification": {
+					"Cod Barras": {
+						"name": "Cod Barras",
+						"value": "               "
+					},
+					"Cod. GTIN": {
+						"name": "Cod. GTIN",
+						"value": "               "
+					},
+					"Pos.IPI/NCM": {
+						"name": "Pos.IPI/NCM",
+						"value": "08081000  "
+					},
+					"weight": {
+						"name": "Peso",
+						"value": 18
+					}
+				},
+				"total": 825
+			}
+		],
+		"needsApprovement": false,
+		"operation": {
+			"id": "2",
+			"name": "Bilhete"
+		},
+		"paymentMethods": {
+			"id": "DEP ",
+			"name": "DEPOSITO"
+		},
+		"paymentType": {
+			"averageDays": 1,
+			"financialAddition": 0,
+			"financialDiscount": 0,
+			"id": "033",
+			"maximumValue": 0,
+			"minimumValue": 0,
+			"name": "PIX",
+			"paymentMoreBusiness": false,
+			"paymentType": "1",
+			"portions": 1
+		},
+		"previousStatus": {
+			"id": "",
+			"name": ""
+		},
+		"priceTable": {
+			"id": "001",
+			"name": "TABELA GERAL"
+		},
+		"productsValue": 825,
+		"productsValueWithDiscount": 825,
+		"quantity": 5,
+		"route": {
+			"id": "000037",
+			"name": "AM - MANAUS"
+		},
+		"seller": {
+			"email": "",
+			"id": "000014",
+			"name": "MAURO CUNHA",
+			"phone": "",
+			"sellerType": {
+				"id": "2",
+				"name": "Bilhete"
+			},
+			"shortName": "MAURO CUNHA"
+		},
+		"sentBy": {
+			"email": "",
+			"id": "68cbf9b76d79f915b5e40a50",
+			"name": "Pedro Cunha",
+			"userName": "pedro.cunha"
+		},
+		"shippingType": {
+			"id": "S",
+			"name": "Sem frete"
+		},
+		"status": {
+			"id": "",
+			"name": ""
+		},
+		"strategies": [],
+		"subsidiary": {
+			"companyName": "FORT FRUIT LTDA",
+			"id": "14,01",
+			"name": "Operacao",
+			"state": "PA"
+		},
+		"transactionType": {
+			"id": "01",
+			"name": "VENDA DE MERCADORIA"
+		},
+		"value": 825
+	},
+	"headers": {
+		"Accept-Charset": "UTF8",
+		"TenantId": "14,01",
+		"x-erp-module": "FAT"
+	},
+	"method": "post",
+	"timeout": "150000",
+	"url": "http://177.67.71.212:9990/rest/4SALFORTFRUITORDERS"
+}

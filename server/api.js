@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from './db.js';
 import { autenticar, encerrarSessao, paraUsuarioFrontend, autenticarMiddleware, exigirAdminMiddleware } from './auth.js';
 import { enviarVendaAoProtheus } from './fila-protheus.js';
-import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES } from './protheus-4sales-test.js';
+import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES, pareceFalhaDeRede } from './protheus-4sales-test.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
 
@@ -60,6 +60,19 @@ export function iniciarApi() {
 
   app.get('/api/health', (req, res) => {
     res.json({ ok: true });
+  });
+
+  // /api/health só confirma que o servidor local do PDV está de pé — continua "online" mesmo com
+  // a internet do prédio caída, porque o PDV é local-first e não depende da rede pra vender.
+  // Este endpoint testa a internet de verdade, tentando alcançar o host do Protheus; qualquer
+  // resposta HTTP (mesmo erro/401) conta como "online" — só falha de rede/timeout conta como offline.
+  app.get('/api/protheus/conexao', async (req, res) => {
+    try {
+      await fetch(URL_TESTE_4SALES, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
+      res.json({ online: true });
+    } catch (erro) {
+      res.json({ online: !pareceFalhaDeRede(erro) });
+    }
   });
 
   // --- Autenticação ---
@@ -305,8 +318,22 @@ export function iniciarApi() {
 
   app.get('/api/caixa', (req, res) => {
     const db = getDb();
-    const linha = db.prepare('SELECT aberto, fundo_de_troco FROM caixa_estado WHERE id = 1').get();
-    res.json({ aberto: !!linha.aberto, fundoDeTroco: linha.fundo_de_troco });
+    const linha = db.prepare('SELECT aberto, fundo_de_troco, data_operacao FROM caixa_estado WHERE id = 1').get();
+    res.json({ aberto: !!linha.aberto, fundoDeTroco: linha.fundo_de_troco, dataOperacao: linha.data_operacao || null });
+  });
+
+  // Data de operação: loja que funciona de madrugada adianta a data no Protheus antes da virada
+  // (ex: 22h do dia 24 já vira dia 25 lá) — as vendas feitas aqui a partir daí precisam contar pro
+  // fechamento do dia 25, não do 24 real. Qualquer operador logado pode ajustar (é operacional,
+  // preciso todo turno de madrugada); null volta a usar a data real automaticamente.
+  app.post('/api/caixa/data-operacao', (req, res) => {
+    const { data } = req.body || {};
+    if (data !== null && !/^\d{4}-\d{2}-\d{2}$/.test(data || '')) {
+      return res.status(400).json({ sucesso: false, erro: 'Data inválida. Use o formato AAAA-MM-DD ou null.' });
+    }
+    const db = getDb();
+    db.prepare('UPDATE caixa_estado SET data_operacao = ? WHERE id = 1').run(data);
+    res.json({ sucesso: true });
   });
 
   app.post('/api/caixa/abrir', (req, res) => {
@@ -334,14 +361,18 @@ export function iniciarApi() {
 
   // Totais por dia dos últimos 7 dias (inclui os dias sem venda, pro gráfico não ter buracos).
   app.get('/api/vendas/resumo-semana', (req, res) => {
+    const db = getDb();
+    // Ancora a janela de 7 dias na data de operação (se adiantada) em vez do calendário real, senão
+    // o dia corrente sumiria do gráfico até o relógio real alcançar a data adiantada.
+    const dataOperacao = db.prepare('SELECT data_operacao FROM caixa_estado WHERE id = 1').get()?.data_operacao;
+    const hoje = dataOperacao ? new Date(`${dataOperacao}T12:00:00`) : new Date();
     const dias = [];
     for (let i = 6; i >= 0; i -= 1) {
-      const data = new Date();
+      const data = new Date(hoje);
       data.setDate(data.getDate() - i);
       dias.push(dataLocalYYYYMMDD(data));
     }
 
-    const db = getDb();
     const linhas = db
       .prepare(
         `SELECT data_local AS data, COUNT(*) AS quantidade, SUM(total) AS total
@@ -377,6 +408,10 @@ export function iniciarApi() {
     const db = getDb();
     const agora = new Date();
     const id = randomUUID();
+    // Se a loja adiantou a "data de operação" (funcionamento de madrugada, ver /api/caixa/data-operacao),
+    // usa ela pro fechamento/Protheus — criado_em abaixo continua com o horário real da venda.
+    const dataOperacao = db.prepare('SELECT data_operacao FROM caixa_estado WHERE id = 1').get()?.data_operacao;
+    const dataLocal = dataOperacao || dataLocalYYYYMMDD(agora);
 
     const inserirVenda = db.prepare(`
       INSERT INTO vendas (id, numero_cupom, loja, caixa, operador, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local, valor_recebido, troco)
@@ -410,7 +445,7 @@ export function iniciarApi() {
         total: venda.total || 0,
         forma_pagamento: venda.formaPagamento || '',
         criado_em: agora.toISOString(),
-        data_local: dataLocalYYYYMMDD(agora),
+        data_local: dataLocal,
         valor_recebido: venda.valorRecebido ?? null,
         troco: venda.troco ?? null,
       });
@@ -440,8 +475,12 @@ export function iniciarApi() {
   });
 
   app.get('/api/vendas', (req, res) => {
-    const data = String(req.query.data || dataLocalYYYYMMDD());
     const db = getDb();
+    // Sem data explícita na query, mostra o dia "de operação" atual — se a loja adiantou a data
+    // (funcionamento de madrugada), é nele que as vendas recentes estão, não necessariamente na
+    // data real do calendário.
+    const dataOperacao = db.prepare('SELECT data_operacao FROM caixa_estado WHERE id = 1').get()?.data_operacao;
+    const data = String(req.query.data || dataOperacao || dataLocalYYYYMMDD());
     const linhas = db
       .prepare("SELECT * FROM vendas WHERE data_local = ? AND deletado = '' ORDER BY criado_em DESC")
       .all(data);

@@ -1,6 +1,7 @@
 export interface EstadoCaixa {
   aberto: boolean;
   fundoDeTroco: number;
+  dataOperacao: string | null;
 }
 
 async function tratarResposta(resp: Response): Promise<{ sucesso: boolean; erro?: string }> {
@@ -38,6 +39,20 @@ export const caixaService = {
   fechar: async (): Promise<{ sucesso: boolean; erro?: string }> => {
     try {
       const resp = await fetch('/api/caixa/fechar', { method: 'POST' });
+      return tratarResposta(resp);
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
+  },
+
+  // data no formato AAAA-MM-DD, ou null pra voltar a usar a data real automaticamente.
+  definirDataOperacao: async (data: string | null): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch('/api/caixa/data-operacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data }),
+      });
       return tratarResposta(resp);
     } catch (erro) {
       return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };

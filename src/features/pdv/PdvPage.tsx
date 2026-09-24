@@ -5,13 +5,13 @@ import { usePdvStore } from '../../store/pdvStore';
 import { useToastStore } from '../../store/toastStore';
 import { useAtalhos } from '../../hooks/useAtalhos';
 import { useFocoLeitor } from '../../hooks/useFocoLeitor';
-import { useStatusConexao } from '../../hooks/useStatusConexao';
+import { useStatusInternet } from '../../hooks/useStatusInternet';
 import { useUltimaSincronizacao } from '../../hooks/useUltimaSincronizacao';
 import { produtoService } from '../../services/produtoService';
 import { clienteService } from '../../services/clienteService';
 import { vendaService } from '../../services/vendaService';
 import { Produto } from '../../types/produto';
-import { Wifi, WifiOff, Search, RefreshCw } from 'lucide-react';
+import { Wifi, WifiOff, Search, RefreshCw, Pencil } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
 
 import { ItensVenda } from './ItensVenda';
@@ -27,19 +27,20 @@ import { ModalQuantidade } from './modais/ModalQuantidade';
 import { ModalCancelamentoItem } from './modais/ModalCancelamentoItem';
 import { ModalCancelamentoCupom } from './modais/ModalCancelamentoCupom';
 import { ModalPagamento } from './modais/ModalPagamento';
-import { ModalFechamentoCaixa } from './modais/ModalFechamentoCaixa';
+import { ModalDataOperacao } from './modais/ModalDataOperacao';
 import { clsx } from 'clsx';
 
 export const PdvPage = () => {
   const { vendedor, loja, caixa } = useAuthStore();
   const {
-    isCaixaAberto,
+    isCaixaAberto, dataOperacao,
     cupomNumero, modalAtivo, setModalAtivo, itens, itemSelecionadoId,
     selecionarAnterior, selecionarProximo, adicionarItem, definirClientePadrao, definirCupomNumero,
   } = usePdvStore();
+  const [modalDataOperacaoAberto, setModalDataOperacaoAberto] = useState(false);
   const { mostrarToast } = useToastStore();
   const navigate = useNavigate();
-  const online = useStatusConexao();
+  const internetOnline = useStatusInternet();
   const ultimaSincronizacao = useUltimaSincronizacao();
   // Por enquanto isso abre o diálogo de impressão do navegador (salvar em PDF) a cada venda
   // finalizada — quando o agent de impressão térmica existir, só o hook precisa mudar.
@@ -179,14 +180,6 @@ export const PdvPage = () => {
       if (semModalAberto && itens.length > 0 && itemSelecionadoId) setModalAtivo('CANCELAR_ITEM');
     },
     'F6': () => semModalAberto && mostrarToast('Cliente (Em desenvolvimento)', 'info'),
-    'F8': () => {
-      if (!semModalAberto) return;
-      if (itens.length > 0) {
-        mostrarToast('Finalize ou cancele a venda atual antes de fechar o caixa', 'erro');
-      } else {
-        setModalAtivo('FECHAR_CAIXA');
-      }
-    },
     'F1': () => {
       if (!semModalAberto || itens.length === 0) return;
       if (itemSemPreco) {
@@ -234,10 +227,10 @@ export const PdvPage = () => {
 
   const ShortcutChip = ({ k, label, disabled }: { k: string; label: string; disabled?: boolean }) => (
     <div className={clsx(
-      "flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs transition-opacity whitespace-nowrap",
+      "flex items-center gap-2 px-3 py-1.5 rounded-md font-bold text-sm transition-opacity whitespace-nowrap",
       disabled ? "bg-slate-100 text-slate-400 opacity-70" : "bg-slate-100 text-slate-700"
     )}>
-      <span className={clsx("px-1 py-0.5 rounded text-[10px]", disabled ? "bg-slate-200 text-slate-400" : "bg-slate-300 text-slate-800")}>{k}</span>
+      <span className={clsx("px-1.5 py-0.5 rounded text-xs", disabled ? "bg-slate-200 text-slate-400" : "bg-slate-300 text-slate-800")}>{k}</span>
       {label}
     </div>
   );
@@ -249,8 +242,23 @@ export const PdvPage = () => {
 
       {/* TOPO */}
       <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20 shadow-sm">
-        <div className="font-bold text-lg text-slate-500 tracking-wider">
-          CAIXA <span className="text-slate-800">{caixa}</span> &middot; LOJA <span className="text-slate-800">{loja}</span>
+        <div>
+          <div className="font-bold text-lg text-slate-500 tracking-wider">
+            CAIXA <span className="text-slate-800">{caixa}</span> &middot; LOJA <span className="text-slate-800">{loja}</span>
+          </div>
+          <button
+            onClick={() => setModalDataOperacaoAberto(true)}
+            className={clsx(
+              'flex items-center gap-1.5 text-xs font-bold transition-colors',
+              dataOperacao ? 'text-amber-600 hover:text-amber-700' : 'text-slate-400 hover:text-slate-600'
+            )}
+            title="Alterar a data de operação (fechamento/Protheus)"
+          >
+            <Pencil size={11} />
+            {dataOperacao
+              ? `Operação: ${dataOperacao.split('-').reverse().join('/')}`
+              : 'Data de operação: automática'}
+          </button>
         </div>
         <div className="font-black text-2xl text-slate-800 tracking-widest bg-slate-100 px-6 py-1.5 rounded-lg border border-slate-200">
           CUPOM Nº <span className="text-blue-600">{cupomNumero || '...'}</span>
@@ -322,7 +330,7 @@ export const PdvPage = () => {
       </main>
 
       {/* RODAPÉ */}
-      <footer className="min-h-12 shrink-0 bg-white flex flex-wrap items-center px-3 py-1.5 gap-1.5 border-t border-slate-200">
+      <footer className="min-h-14 shrink-0 bg-white flex flex-wrap items-center px-3 py-2 gap-2 border-t border-slate-200">
         <ShortcutChip k="F2" label="Buscar Produto" disabled={!isCaixaAberto} />
         <ShortcutChip k="F3" label="Quantidade" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
         <ShortcutChip k="F4" label="Desconto" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
@@ -330,7 +338,6 @@ export const PdvPage = () => {
         <ShortcutChip k="F6" label="Cliente" disabled={!isCaixaAberto} />
         <ShortcutChip k="F1" label="Finalizar Venda" disabled={!isCaixaAberto || itens.length === 0 || !!itemSemPreco} />
         <ShortcutChip k="F12" label="Cancelar Cupom" disabled={!isCaixaAberto || itens.length === 0} />
-        <ShortcutChip k="F8" label="Fechar Caixa" disabled={!isCaixaAberto || itens.length > 0} />
         <ShortcutChip k="ESC" label="Sair do PDV" disabled={!isCaixaAberto} />
 
         <div className="ml-auto flex items-center gap-1.5">
@@ -348,13 +355,16 @@ export const PdvPage = () => {
 
           <div
             className={clsx(
-              'flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs whitespace-nowrap',
-              online ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+              'flex items-center p-1.5 rounded-md',
+              internetOnline ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
             )}
-            title={online ? 'Conectado ao servidor local' : 'Trabalhando offline — usando cache local'}
+            title={
+              internetOnline
+                ? 'Internet OK — envio ao Protheus deve funcionar'
+                : 'Sem internet — vendas continuam salvando local e são enviadas ao Protheus quando a conexão voltar'
+            }
           >
-            {online ? <Wifi size={14} /> : <WifiOff size={14} />}
-            {online ? 'Online' : 'Offline'}
+            {internetOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
           </div>
         </div>
       </footer>
@@ -366,7 +376,7 @@ export const PdvPage = () => {
       {modalAtivo === 'CANCELAR_ITEM' && <ModalCancelamentoItem />}
       {modalAtivo === 'CANCELAR_CUPOM' && <ModalCancelamentoCupom />}
       {modalAtivo === 'PAGAMENTO' && <ModalPagamento aoFinalizarImprimir={imprimirPorId} />}
-      {modalAtivo === 'FECHAR_CAIXA' && <ModalFechamentoCaixa />}
+      {modalDataOperacaoAberto && <ModalDataOperacao aoFechar={() => setModalDataOperacaoAberto(false)} />}
     </div>
     {/* Fora do wrapper print:hidden acima — só isto aparece quando a impressão dispara. */}
     {vendaParaImprimir && <ReciboTermico venda={vendaParaImprimir} />}

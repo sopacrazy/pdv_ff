@@ -1,28 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import {
-  LayoutDashboard,
-  MonitorPlay,
-  Search,
-  Ticket,
-  ShieldCheck,
-  LogOut,
-  Wallet,
-  Lock,
-  Receipt,
-  RefreshCw,
-  WifiOff,
-  ArrowRight,
-} from 'lucide-react';
-import fortfruitLogo from '@/fortfruit-logo.png';
+import { Wallet, Receipt } from 'lucide-react';
+import { AppShell } from '../../components/AppShell';
 import { useAuthStore } from '../../store/authStore';
-import { usePdvStore } from '../../store/pdvStore';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { formatMoney } from '../../utils/formatters';
 import { vendaService, VendaResumo } from '../../services/vendaService';
-import { useStatusConexao } from '../../hooks/useStatusConexao';
-import { useUltimaSincronizacao } from '../../hooks/useUltimaSincronizacao';
 import {
   Donut,
   GraficoLinha,
@@ -78,13 +61,10 @@ function TituloCard({ titulo, acessorio }: { titulo: string; acessorio?: React.R
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { vendedor, loja, caixa, logout, usuario } = useAuthStore();
-  const { isCaixaAberto, fundoDeTroco, fecharCaixa } = usePdvStore();
-  const online = useStatusConexao();
-  const ultimaSincronizacao = useUltimaSincronizacao();
+  const { vendedor, loja, caixa, usuario } = useAuthStore();
+  const isAdmin = usuario?.papel === 'ADMIN';
 
   const [horaAtual, setHoraAtual] = useState(new Date());
-  const [confirmandoFechamento, setConfirmandoFechamento] = useState(false);
   const [vendasHoje, setVendasHoje] = useState<VendaResumo[]>([]);
   const [semana, setSemana] = useState<{ data: string; quantidade: number; total: number }[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -180,137 +160,16 @@ export function HomePage() {
   const formatadorHora = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const formatadorData = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' });
 
-  const handleSair = async () => {
-    await logout();
-    navigate('/login');
-  };
-
-  const confirmarFechamento = () => {
-    setConfirmandoFechamento(false);
-    fecharCaixa();
-  };
-
-  const itensMenu = [
-    { rotulo: 'Início', icone: LayoutDashboard, rota: '/home' },
-    { rotulo: 'PDV', icone: MonitorPlay, rota: '/pdv' },
-    { rotulo: 'Consultas', icone: Search, rota: '/consultas' },
-    { rotulo: 'Bilhete', icone: Ticket, rota: '/bilhetes' },
-    ...(usuario?.papel === 'ADMIN' ? [{ rotulo: 'Administrador', icone: ShieldCheck, rota: '/admin' }] : []),
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-100 p-4 font-sans text-slate-900">
-      <div className="max-w-[1600px] mx-auto flex gap-4">
-        {/* SIDEBAR */}
-        <aside className="hidden lg:flex w-60 shrink-0 flex-col gap-4">
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 flex items-center gap-3">
-            <img src={fortfruitLogo} alt="Fort Fruit" className="h-9 w-9 object-contain" />
-            <div className="min-w-0">
-              <p className="font-bold text-slate-800 truncate leading-tight">{vendedor?.nome || 'Operador'}</p>
-              <p className="text-xs text-slate-400 truncate">
-                {usuario?.papel === 'ADMIN' ? 'Administrador' : 'Operador'}
-              </p>
-            </div>
-          </div>
-
-          <nav className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-3 flex flex-col gap-1">
-            {itensMenu.map((item) => {
-              const ativo = item.rota === '/home';
-              const Icone = item.icone;
-              return (
-                <button
-                  key={item.rota}
-                  onClick={() => navigate(item.rota)}
-                  className={clsx(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-colors',
-                    ativo ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-                  )}
-                >
-                  <Icone size={18} />
-                  {item.rotulo}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 mt-auto">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Caixa</span>
-              <span
-                className={clsx(
-                  'px-2 py-0.5 rounded-full text-[11px] font-bold',
-                  isCaixaAberto ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
-                )}
-              >
-                {isCaixaAberto ? 'ABERTO' : 'FECHADO'}
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-400">Fundo de troco</p>
-            <p className="text-xl font-bold text-slate-800 mb-4">{formatMoney(fundoDeTroco)}</p>
-
-            <button
-              onClick={() => navigate('/pdv')}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
-            >
-              {isCaixaAberto ? 'Ir para o PDV' : 'Abrir caixa'}
-              <ArrowRight size={16} />
-            </button>
-
-            {isCaixaAberto && (
-              <button
-                onClick={() => setConfirmandoFechamento(true)}
-                className="w-full flex items-center justify-center gap-2 mt-2 text-slate-500 hover:text-slate-800 py-2 rounded-xl font-medium text-sm transition-colors"
-              >
-                <Lock size={14} />
-                Fechar caixa
-              </button>
-            )}
-          </div>
-        </aside>
-
-        {/* CONTEÚDO */}
-        <div className="flex-1 min-w-0 flex flex-col gap-4">
-          {/* TOPO */}
-          <header className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="text-xl font-bold text-slate-800 truncate">
-                {saudacao(horaCorrente)}, {(vendedor?.nome || 'Operador').split(' ')[0]}
-              </h1>
-              <p className="text-sm text-slate-400 capitalize truncate">
-                {formatadorData.format(horaAtual)} · Loja {loja} · Caixa {caixa}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 shrink-0">
-              <div
-                className={clsx(
-                  'hidden md:flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold',
-                  online ? 'bg-slate-50 text-slate-500' : 'bg-red-50 text-red-600'
-                )}
-                title={
-                  ultimaSincronizacao
-                    ? `Última sincronização com o Protheus: ${ultimaSincronizacao.toLocaleString('pt-BR')}`
-                    : 'Ainda não sincronizou com o Protheus'
-                }
-              >
-                {online ? <RefreshCw size={14} /> : <WifiOff size={14} />}
-                {online
-                  ? ultimaSincronizacao
-                    ? `Sincronizado ${formatadorHora.format(ultimaSincronizacao)}`
-                    : 'Sem sincronização'
-                  : 'Offline'}
-              </div>
-
-              <button
-                onClick={handleSair}
-                className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2 rounded-xl font-bold text-sm transition-colors"
-              >
-                <LogOut size={16} />
-                Sair
-              </button>
-            </div>
-          </header>
+    <AppShell rotaAtiva="/home">
+      <header className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-6 py-4">
+        <h1 className="text-xl font-bold text-slate-800 truncate">
+          {saudacao(horaCorrente)}, {(vendedor?.nome || 'Operador').split(' ')[0]}
+        </h1>
+        <p className="text-sm text-slate-400 capitalize truncate">
+          {formatadorData.format(horaAtual)} · Loja {loja} · Caixa {caixa}
+        </p>
+      </header>
 
           <div className={clsx('grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-4 transition-opacity', carregando && 'opacity-60')}>
             {/* COLUNA ESQUERDA */}
@@ -347,35 +206,39 @@ export function HomePage() {
                 </Card>
               </div>
 
-              <Card>
-                <TituloCard
-                  titulo="Faturamento por hora"
-                  acessorio={<span className="text-xs text-slate-400">Hoje</span>}
-                />
-                {pontosPorHora.length > 1 ? (
-                  <GraficoLinha pontos={pontosPorHora} formatarValor={formatMoney} />
-                ) : (
-                  <div className="h-[190px] flex items-center justify-center text-sm text-slate-400">
-                    {pontosPorHora.length === 1
-                      ? 'Só uma hora com venda até agora — o gráfico aparece a partir da segunda.'
-                      : 'Nenhuma venda registrada hoje.'}
-                  </div>
-                )}
-              </Card>
+              {isAdmin && (
+                <>
+                  <Card>
+                    <TituloCard
+                      titulo="Faturamento por hora"
+                      acessorio={<span className="text-xs text-slate-400">Hoje</span>}
+                    />
+                    {pontosPorHora.length > 1 ? (
+                      <GraficoLinha pontos={pontosPorHora} formatarValor={formatMoney} />
+                    ) : (
+                      <div className="h-[190px] flex items-center justify-center text-sm text-slate-400">
+                        {pontosPorHora.length === 1
+                          ? 'Só uma hora com venda até agora — o gráfico aparece a partir da segunda.'
+                          : 'Nenhuma venda registrada hoje.'}
+                      </div>
+                    )}
+                  </Card>
 
-              <Card>
-                <TituloCard
-                  titulo="Formas de pagamento"
-                  acessorio={<span className="text-xs text-slate-400">Hoje</span>}
-                />
-                {formasPagamento.length > 0 ? (
-                  <GraficoBarrasHorizontais barras={formasPagamento} />
-                ) : (
-                  <div className="h-24 flex items-center justify-center text-sm text-slate-400">
-                    Nenhuma venda registrada hoje.
-                  </div>
-                )}
-              </Card>
+                  <Card>
+                    <TituloCard
+                      titulo="Formas de pagamento"
+                      acessorio={<span className="text-xs text-slate-400">Hoje</span>}
+                    />
+                    {formasPagamento.length > 0 ? (
+                      <GraficoBarrasHorizontais barras={formasPagamento} />
+                    ) : (
+                      <div className="h-24 flex items-center justify-center text-sm text-slate-400">
+                        Nenhuma venda registrada hoje.
+                      </div>
+                    )}
+                  </Card>
+                </>
+              )}
             </div>
 
             {/* COLUNA DIREITA */}
@@ -426,37 +289,24 @@ export function HomePage() {
                 )}
               </Card>
 
-              <Card>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h2 className="text-base font-bold text-slate-800">Vendas na semana</h2>
-                    <p className="text-2xl font-bold text-slate-900 mt-1">{formatMoney(totalSemana)}</p>
-                    <p className="text-xs text-slate-400">{cuponsSemana} cupons nos últimos 7 dias</p>
+              {isAdmin && (
+                <Card>
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <h2 className="text-base font-bold text-slate-800">Vendas na semana</h2>
+                      <p className="text-2xl font-bold text-slate-900 mt-1">{formatMoney(totalSemana)}</p>
+                      <p className="text-xs text-slate-400">{cuponsSemana} cupons nos últimos 7 dias</p>
+                    </div>
                   </div>
-                </div>
-                {barrasSemana.length > 0 ? (
-                  <GraficoBarras barras={barrasSemana} formatarValor={formatMoney} />
-                ) : (
-                  <div className="h-44 flex items-center justify-center text-sm text-slate-400">Sem dados.</div>
-                )}
-              </Card>
+                  {barrasSemana.length > 0 ? (
+                    <GraficoBarras barras={barrasSemana} formatarValor={formatMoney} />
+                  ) : (
+                    <div className="h-44 flex items-center justify-center text-sm text-slate-400">Sem dados.</div>
+                  )}
+                </Card>
+              )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {confirmandoFechamento && (
-        <ConfirmDialog
-          titulo="Fechar Caixa"
-          mensagem="Deseja realmente fechar o caixa?"
-          labelDestaque="Fundo de Troco (Abertura)"
-          valorDestaque={formatMoney(fundoDeTroco)}
-          variante="padrao"
-          confirmarLabel="FECHAR (ENTER)"
-          onConfirmar={confirmarFechamento}
-          onCancelar={() => setConfirmandoFechamento(false)}
-        />
-      )}
-    </div>
+    </AppShell>
   );
 }

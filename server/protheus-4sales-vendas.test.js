@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { montarVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
-const venda = { id: 'pdv-test-123', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z' };
+const venda = { id: 'pdv-test-123', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z', data_local: '2026-09-22' };
 const itens = [{ codigo_produto: '199.029', descricao: 'MACA', quantidade: 2, valor_unitario: 16500, valor_total: 33000, desconto: 0 }];
 const vendedor = { protheus_vend_codigo: '000090' };
 const cliente = { code: 'YDOVT3', store: '01', pricelist: '015' };
@@ -15,6 +15,10 @@ test('mapeia centavos e contexto autorizado sem reutilizar o bilhete 645', () =>
 test('usa a condição de pagamento do cadastro do cliente como paymentType, sem exigir PIX', () => {
  const p = montar({...venda, forma_pagamento: '001'});
  assert.equal(p.body.paymentType.id, '001'); assert.equal(p.body.paymentType.name, '001');
+});
+test('usa a data de operação (data_local) no bilhete, não o dia real de criado_em, mantendo a hora real', () => {
+ const p = montar({...venda, data_local: '2026-09-25'});
+ assert.equal(p.body.date, '2026-09-25T12:00:00.000Z');
 });
 test('bloqueia venda sem condição de pagamento, descontos e preços não homologados antes do POST', () => {
  assert.throws(() => montar({...venda, forma_pagamento: ''}), /condição de pagamento/);

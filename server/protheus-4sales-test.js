@@ -10,6 +10,18 @@ export function pareceFalhaDeRede(erro) {
     /fetch failed/i.test(erro?.message || '');
 }
 
+// `fetch failed` sozinho não diz nada — o motivo real (timeout de conexão, DNS, host recusou etc.)
+// fica em erro.cause. Junta os dois pra dar pra diagnosticar pelo log do servidor sem precisar
+// reproduzir manualmente (ex: "fetch failed: ConnectTimeoutError: Connect Timeout Error (attempted
+// address: 177.67.71.212:9990, timeout: 10000ms)").
+export function descreverErro(erro) {
+  if (!erro) return 'Erro desconhecido.';
+  const causa = erro.cause;
+  if (!causa) return erro.message;
+  const detalheCausa = causa instanceof Error ? `${causa.name}: ${causa.message}` : String(causa);
+  return `${erro.message}: ${detalheCausa}`;
+}
+
 export function prepararTeste4Sales(documento) {
   if (!documento || typeof documento !== 'object' || Array.isArray(documento)) throw new Error('Informe o JSON enviado pela empresa.');
   const body = documento.body;
@@ -60,6 +72,6 @@ export async function enviarTeste4Sales(preparado, { timeoutMs = 150000 } = {}) 
       mensagem: 'Resposta recebida. Confira o retorno e o bilhete no Protheus antes de novo envio.' };
   } catch (erro) {
     return { httpOk: false, resultadoDesconhecido: true, semInternet: pareceFalhaDeRede(erro), duracaoMs: Date.now() - inicio,
-      erro: erro.message, mensagem: 'Resultado remoto desconhecido. Confira no Protheus; o envio não será repetido automaticamente.' };
+      erro: descreverErro(erro), mensagem: 'Resultado remoto desconhecido. Confira no Protheus; o envio não será repetido automaticamente.' };
   }
 }
