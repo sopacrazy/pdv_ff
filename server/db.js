@@ -10,7 +10,10 @@ const ADMIN_SENHA_PADRAO = process.env.ADMIN_SENHA || 'admin123';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const DB_DIR = path.join(__dirname, 'data');
+// No app empacotado (Electron), o código roda dentro do instalador (read-only) — o processo
+// principal aponta PDV_DB_DIR pra pasta de dados do usuário (app.getPath('userData')) antes de
+// carregar o servidor. Sem essa variável (dev, servidor web solto), mantém o caminho de sempre.
+const DB_DIR = process.env.PDV_DB_DIR || path.join(__dirname, 'data');
 const DB_PATH = path.join(DB_DIR, 'pdv.db');
 
 let instancia = null;

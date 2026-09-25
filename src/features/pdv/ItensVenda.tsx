@@ -129,7 +129,6 @@ export const ItensVenda = () => {
             <th className="p-4 w-28 text-right">Qtd 2ª</th>
             <th className="p-4 w-16 text-center">UN 2ª</th>
             <th className="p-4 w-32 text-right">Vl. Unit</th>
-            <th className="p-4 w-28 text-right">Desc.</th>
             <th className="p-4 w-36 text-right pr-6">Total</th>
           </tr>
         </thead>
@@ -154,7 +153,7 @@ export const ItensVenda = () => {
               >
                 <td className="p-4 text-center text-slate-400">{(index + 1).toString().padStart(3, '0')}</td>
                 <td className="p-4 text-slate-500">{item.produto.codigo}</td>
-                <td className="p-4 truncate max-w-[200px]" title={item.produto.descricao}>
+                <td className="p-4 truncate" title={item.produto.descricao}>
                   {item.produto.descricao}
                 </td>
                 <td className="p-1 text-right">
@@ -183,9 +182,6 @@ export const ItensVenda = () => {
                 </td>
                 <td className="p-4 text-right tabular-nums font-bold">
                   {semPreco ? 'SEM PREÇO' : formatMoney(item.valorUnitario)}
-                </td>
-                <td className="p-4 text-right tabular-nums text-red-500">
-                  {item.desconto > 0 ? formatMoney(item.desconto) : '-'}
                 </td>
                 <td className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
               </tr>

@@ -48,7 +48,9 @@ async function rodarSync(origem) {
   return { produtos, cliente, usuariosProtheus, vendedoresProtheus };
 }
 
-iniciarApi();
+// Exportado pra quem embute este servidor (processo principal do Electron) saber exatamente quando
+// a porta já está escutando, sem precisar esperar a sincronização em segundo plano abaixo.
+export const servidorPronto = iniciarApi();
 
 await rodarSync('inicialização');
 await processarFilaProtheus('inicialização');

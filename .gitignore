@@ -12,3 +12,11 @@ server/data/
 # não vai pro repo público). O que a gente mesmo escreve fica em protheus-source/.
 /*.prw
 /*.PRW
+
+# Build/empacotamento do Electron.
+dist-electron/
+release/
+
+# Token de acesso ao GitHub embutido no app empacotado (auto-update de repo privado) — nunca commitar
+# o real. build-resources/gh-token.example.txt fica versionado como modelo.
+build-resources/gh-token.txt

@@ -1,0 +1,7 @@
+COLOQUE_AQUI_UM_GITHUB_PERSONAL_ACCESS_TOKEN_COM_ESCOPO_REPO
+
+Copie este arquivo para "gh-token.txt" (mesma pasta) e substitua pelo token real.
+gh-token.txt é gitignored — nunca commitar o token de verdade.
+Esse token só precisa de permissão de leitura no repositório sopacrazy/pdv_ff (escopo "repo",
+já que o repo é privado) e fica embutido no instalador pra permitir o auto-update baixar as
+releases do GitHub a partir das máquinas dos caixas.

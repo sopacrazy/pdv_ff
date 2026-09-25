@@ -1,6 +1,8 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { getDb } from './db.js';
 import { autenticar, encerrarSessao, paraUsuarioFrontend, autenticarMiddleware, exigirAdminMiddleware } from './auth.js';
@@ -8,6 +10,11 @@ import { enviarVendaAoProtheus } from './fila-protheus.js';
 import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES, pareceFalhaDeRede } from './protheus-4sales-test.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// No app empacotado (Electron) e em qualquer execução standalone do servidor, o build do front
+// (Vite) fica em dist/ ao lado de server/. Em dev, o Vite roda seu próprio servidor (porta 3000)
+// e faz proxy de /api pra cá — normalmente não há dist/ nesse momento, então isso fica inativo.
+const DIST_DIR = path.join(__dirname, '..', 'dist');
 
 function paraProdutoFrontend(linha) {
   return {
@@ -554,7 +561,21 @@ export function iniciarApi() {
     res.json({ sucesso: true });
   });
 
-  app.listen(PORTA, () => {
-    console.log(`[api] Servindo produtos em http://localhost:${PORTA}`);
+  // Serve o build do front (Vite) quando ele existir — caso do app empacotado no Electron, onde
+  // não há um servidor de dev separado. Fica depois de todas as rotas /api pra nunca competir com
+  // elas, e só é ativado se dist/index.html existir (em dev, sem build, isso simplesmente não roda).
+  const indexHtml = path.join(DIST_DIR, 'index.html');
+  if (fs.existsSync(indexHtml)) {
+    app.use(express.static(DIST_DIR));
+    app.get('*', (req, res) => {
+      res.sendFile(indexHtml);
+    });
+  }
+
+  return new Promise((resolve) => {
+    const servidor = app.listen(PORTA, () => {
+      console.log(`[api] Servindo produtos em http://localhost:${PORTA}`);
+      resolve(servidor);
+    });
   });
 }

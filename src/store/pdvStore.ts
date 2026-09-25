@@ -7,7 +7,7 @@ import { vendaService } from '../services/vendaService';
 import { caixaService } from '../services/caixaService';
 import { paraPrimeiraUnidade } from '../utils/unidades';
 
-export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'QUANTIDADE' | 'DESCONTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO' | 'CLIENTE';
+export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO';
 
 interface PdvState {
   isCaixaAberto: boolean;
