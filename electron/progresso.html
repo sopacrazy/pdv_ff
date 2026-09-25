@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        -webkit-user-select: none;
+        cursor: default;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #ffffff;
+        font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+      }
+      .spinner {
+        width: 26px;
+        height: 26px;
+        border: 3px solid #e2e8f0;
+        border-top-color: #2563eb;
+        border-radius: 50%;
+        animation: girar 0.8s linear infinite;
+      }
+      @keyframes girar {
+        to { transform: rotate(360deg); }
+      }
+      p {
+        margin: 0;
+        color: #334155;
+        font-size: 13px;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="spinner"></div>
+    <p id="msg">Verificando…</p>
+    <script>
+      const params = new URLSearchParams(location.search);
+      document.getElementById('msg').textContent = params.get('mensagem') || 'Verificando…';
+    </script>
+  </body>
+</html>

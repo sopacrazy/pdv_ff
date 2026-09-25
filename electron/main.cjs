@@ -8,6 +8,8 @@ const { autoUpdater } = require('electron-updater');
 
 const PORTA = 3001;
 let janelaPrincipal = null;
+let janelaSplash = null;
+let janelaProgresso = null;
 
 // Impede abrir uma segunda instância desta MESMA instalação (ex: clicar duas vezes no atalho sem
 // perceber que já está aberto) — cada instância tentaria subir seu próprio servidor na porta 3001
@@ -116,6 +118,7 @@ function configurarAutoUpdate() {
   autoUpdater.on('error', (erro) => {
     console.error('[electron] Erro no auto-update:', erro);
     if (checagemManualEmAndamento) {
+      fecharJanelaProgresso();
       dialog.showMessageBox(janelaPrincipal, {
         type: 'error',
         title: 'Verificar atualizações',
@@ -127,11 +130,16 @@ function configurarAutoUpdate() {
   });
   autoUpdater.on('update-available', (info) => {
     console.log(`[electron] Atualização disponível: v${info.version}. Baixando...`);
-    checagemManualEmAndamento = false;
+    // Não fecha a janela de progresso ainda — ela segue mostrando "Baixando..." até o download
+    // terminar (update-downloaded), que é quando o diálogo de "reiniciar agora?" aparece.
+    if (checagemManualEmAndamento) {
+      atualizarJanelaProgresso(`Baixando atualização v${info.version}…`);
+    }
   });
   autoUpdater.on('update-not-available', () => {
     console.log('[electron] App já está na versão mais recente.');
     if (checagemManualEmAndamento) {
+      fecharJanelaProgresso();
       dialog.showMessageBox(janelaPrincipal, {
         type: 'info',
         title: 'Verificar atualizações',
@@ -142,6 +150,8 @@ function configurarAutoUpdate() {
   });
   autoUpdater.on('update-downloaded', async (info) => {
     console.log(`[electron] Atualização v${info.version} baixada.`);
+    fecharJanelaProgresso();
+    checagemManualEmAndamento = false;
     const resposta = await dialog.showMessageBox(janelaPrincipal, {
       type: 'info',
       title: 'Atualização disponível',
@@ -174,8 +184,10 @@ function verificarAtualizacoesManualmente() {
     return;
   }
   checagemManualEmAndamento = true;
+  abrirJanelaProgresso('Verificando atualizações…');
   autoUpdater.checkForUpdates().catch((erro) => {
     checagemManualEmAndamento = false;
+    fecharJanelaProgresso();
     console.error('[electron] Falha ao checar update (manual):', erro);
   });
 }
@@ -220,6 +232,67 @@ function montarMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// Abrir o app envolve subir o servidor embutido + sincronizar com o Protheus antes de ter algo pra
+// mostrar — alguns segundos em que a tela ficaria totalmente em branco. Essa janela pequena aparece
+// na hora do clique (sem esperar nada) só pra dar feedback de que o app já está abrindo, e evita o
+// usuário clicar várias vezes achando que não funcionou.
+function abrirSplash() {
+  janelaSplash = new BrowserWindow({
+    width: 340,
+    height: 220,
+    frame: false,
+    resizable: false,
+    movable: false,
+    center: true,
+    show: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    icon: path.join(__dirname, '..', 'build-resources', 'icon.ico'),
+    webPreferences: { contextIsolation: true },
+  });
+  janelaSplash.loadFile(path.join(__dirname, 'splash.html'));
+  janelaSplash.on('closed', () => {
+    janelaSplash = null;
+  });
+}
+
+function fecharSplash() {
+  if (janelaSplash && !janelaSplash.isDestroyed()) janelaSplash.close();
+  janelaSplash = null;
+}
+
+// Janelinha de progresso reaproveitada pra "Verificar atualizações agora" — o checkForUpdates()
+// contra a API do GitHub pode levar alguns segundos, e sem isso o clique parecia não fazer nada.
+function abrirJanelaProgresso(mensagem) {
+  janelaProgresso = new BrowserWindow({
+    width: 320,
+    height: 140,
+    parent: janelaPrincipal,
+    modal: true,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    show: true,
+    webPreferences: { contextIsolation: true },
+  });
+  janelaProgresso.loadFile(path.join(__dirname, 'progresso.html'), { query: { mensagem } });
+  janelaProgresso.on('closed', () => {
+    janelaProgresso = null;
+  });
+}
+
+function atualizarJanelaProgresso(mensagem) {
+  if (janelaProgresso && !janelaProgresso.isDestroyed()) {
+    janelaProgresso.loadFile(path.join(__dirname, 'progresso.html'), { query: { mensagem } });
+  }
+}
+
+function fecharJanelaProgresso() {
+  if (janelaProgresso && !janelaProgresso.isDestroyed()) janelaProgresso.close();
+  janelaProgresso = null;
+}
+
 async function criarJanela() {
   janelaPrincipal = new BrowserWindow({
     width: 1366,
@@ -232,9 +305,12 @@ async function criarJanela() {
     },
   });
 
-  janelaPrincipal.once('ready-to-show', () => {
-    janelaPrincipal.maximize();
-    janelaPrincipal.show();
+  const prontoParaMostrar = new Promise((resolve) => {
+    janelaPrincipal.once('ready-to-show', () => {
+      janelaPrincipal.maximize();
+      janelaPrincipal.show();
+      resolve();
+    });
   });
 
   janelaPrincipal.on('closed', () => {
@@ -242,9 +318,12 @@ async function criarJanela() {
   });
 
   await janelaPrincipal.loadURL(`http://localhost:${PORTA}`);
+  await prontoParaMostrar;
 }
 
 app.whenReady().then(async () => {
+  abrirSplash();
+
   // Força tema claro pra barra de título nativa (Windows aplica dark mode do sistema por padrão,
   // deixando a barra preta) — a UI do PDV é toda clara, então a barra escura destoa.
   nativeTheme.themeSource = 'light';
@@ -266,12 +345,14 @@ app.whenReady().then(async () => {
       erro?.code === 'EADDRINUSE'
         ? 'Já existe outra cópia do PDV Fort Fruit (ou outro programa) usando a porta 3001. Feche-a antes de abrir de novo.'
         : `Não foi possível iniciar o servidor local: ${erro?.message || erro}`;
+    fecharSplash();
     dialog.showErrorBox('PDV Fort Fruit', mensagem);
     app.quit();
     return;
   }
 
   await criarJanela();
+  fecharSplash();
 
   configurarAutoUpdate();
 
