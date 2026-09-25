@@ -13,8 +13,6 @@ import {
   GraficoBarrasHorizontais,
   COR_SERIE,
   COR_TRILHA,
-  COR_DESTAQUE,
-  COR_TRILHA_DESTAQUE,
   PontoLinha,
   BarraDia,
   BarraHorizontal,
@@ -92,20 +90,19 @@ export function HomePage() {
   const horaCorrente = horaAtual.getHours();
 
   const faturamentoHoje = vendasHoje.reduce((soma, venda) => soma + venda.total, 0);
-  const cuponsHoje = vendasHoje.length;
-  const ticketMedio = cuponsHoje > 0 ? Math.round(faturamentoHoje / cuponsHoje) : 0;
+
+  // "Pendente" agrupa tudo que ainda não foi confirmado no Protheus (LOCAL, PREPARANDO, CONFERIR)
+  // — o que importa pro operador é só "já integrou ou ainda falta", não o estado intermediário exato.
+  const totalIntegrado = vendasHoje.filter((v) => v.statusProtheus === 'INTEGRADO').length;
+  const totalPendente = vendasHoje.length - totalIntegrado;
 
   // Média dos 6 dias anteriores — denominador honesto pra comparar o dia de hoje.
   const diasAnteriores = semana.slice(0, -1);
   const mediaFaturamento = diasAnteriores.length
     ? diasAnteriores.reduce((soma, dia) => soma + dia.total, 0) / diasAnteriores.length
     : 0;
-  const mediaCupons = diasAnteriores.length
-    ? diasAnteriores.reduce((soma, dia) => soma + dia.quantidade, 0) / diasAnteriores.length
-    : 0;
 
   const percentualFaturamento = mediaFaturamento > 0 ? (faturamentoHoje / mediaFaturamento) * 100 : 0;
-  const percentualCupons = mediaCupons > 0 ? (cuponsHoje / mediaCupons) * 100 : 0;
 
   const totalSemana = semana.reduce((soma, dia) => soma + dia.total, 0);
   const cuponsSemana = semana.reduce((soma, dia) => soma + dia.quantidade, 0);
@@ -190,18 +187,25 @@ export function HomePage() {
                   </p>
                 </Card>
 
-                <Card className="flex flex-col items-center">
-                  <TituloCard titulo="Cupons emitidos" />
-                  <Donut percentual={percentualCupons} cor={COR_DESTAQUE} corTrilha={COR_TRILHA_DESTAQUE}>
-                    <span className="text-[40px] leading-none font-bold text-slate-900">{cuponsHoje}</span>
-                    <span className="text-xs text-slate-400 mt-1">
-                      ticket {cuponsHoje > 0 ? formatMoney(ticketMedio) : '—'}
-                    </span>
-                  </Donut>
+                <Card className="flex flex-col items-center justify-center">
+                  <TituloCard titulo="Integração Protheus" />
+                  <div className="flex items-center gap-6 py-3">
+                    <div className="text-center">
+                      <div className="text-4xl font-black text-amber-500 tabular-nums">{totalPendente}</div>
+                      <div className="text-xs text-slate-400 mt-1 font-medium">Pendente</div>
+                    </div>
+                    <div className="h-12 w-px bg-slate-200" />
+                    <div className="text-center">
+                      <div className="text-4xl font-black text-green-600 tabular-nums">{totalIntegrado}</div>
+                      <div className="text-xs text-slate-400 mt-1 font-medium">Integrado</div>
+                    </div>
+                  </div>
                   <p className="text-xs text-slate-400 mt-3 text-center">
-                    {mediaCupons > 0
-                      ? `${percentualCupons.toFixed(0)}% da média da semana (${mediaCupons.toFixed(1)}/dia)`
-                      : 'Sem histórico dos dias anteriores'}
+                    {totalPendente === 0
+                      ? vendasHoje.length > 0
+                        ? 'Tudo integrado ao Protheus ✓'
+                        : 'Nenhuma venda hoje ainda.'
+                      : `${totalPendente} pedido${totalPendente > 1 ? 's' : ''} aguardando envio ao Protheus`}
                   </p>
                 </Card>
               </div>

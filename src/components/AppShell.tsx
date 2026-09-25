@@ -71,7 +71,7 @@ export function AppShell({ children, rotaAtiva, className }: AppShellProps) {
           reaproveitar o mesmo max-w/centralização do conteúdo, mantendo o menu sempre alinhado
           com a coluna de conteúdo em qualquer largura de tela, sem o "pulo" que sticky causava
           ao chegar no fim do scroll. */}
-      <div className="hidden lg:block fixed top-20 bottom-4 left-0 right-0 pointer-events-none z-20">
+      <div className="hidden lg:block fixed top-20 bottom-20 left-0 right-0 pointer-events-none z-20">
         <div className="max-w-[1600px] mx-auto h-full px-4">
           <aside className="pointer-events-auto flex w-60 h-full flex-col bg-slate-900 rounded-2xl shadow-sm p-3">
             <nav className="flex flex-col gap-1">
@@ -128,7 +128,7 @@ export function AppShell({ children, rotaAtiva, className }: AppShellProps) {
         </div>
       </div>
 
-      <div className="pt-20 p-4">
+      <div className="pt-20 pb-20 px-4">
         <div className="max-w-[1600px] mx-auto flex gap-4">
           {/* Espaço reservado pra sidebar fixa acima não sobrepor o conteúdo */}
           <div className="hidden lg:block w-60 shrink-0" aria-hidden="true" />
@@ -136,6 +136,10 @@ export function AppShell({ children, rotaAtiva, className }: AppShellProps) {
           <div className="flex-1 min-w-0 flex flex-col gap-4">{children}</div>
         </div>
       </div>
+
+      {/* RODAPÉ FIXO: mesmo acabamento visual do rodapé de atalhos do PDV, mas vazio aqui — só
+          pra dar consistência de moldura entre todas as telas do sistema. */}
+      <footer className="fixed bottom-0 inset-x-0 h-14 bg-white border-t border-slate-200 z-30" />
     </div>
   );
 }
