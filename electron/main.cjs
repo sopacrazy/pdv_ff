@@ -7,6 +7,23 @@ const { app, BrowserWindow, Menu, dialog, nativeTheme, shell } = require('electr
 const { autoUpdater } = require('electron-updater');
 
 const PORTA = 3001;
+let janelaPrincipal = null;
+
+// Impede abrir uma segunda instância desta MESMA instalação (ex: clicar duas vezes no atalho sem
+// perceber que já está aberto) — cada instância tentaria subir seu próprio servidor na porta 3001
+// e a segunda falharia com EADDRINUSE. Quando isso acontece, a segunda cópia simplesmente fecha e
+// avisa a primeira pra vir pra frente.
+const ehInstanciaUnica = app.requestSingleInstanceLock();
+if (!ehInstanciaUnica) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (janelaPrincipal) {
+      if (janelaPrincipal.isMinimized()) janelaPrincipal.restore();
+      janelaPrincipal.focus();
+    }
+  });
+}
 
 // O código do app empacotado roda dentro do instalador (pasta somente-leitura em Program Files).
 // O banco SQLite precisa ficar num lugar gravável — a pasta de dados do usuário do Windows
@@ -49,7 +66,6 @@ function configurarLogParaArquivo() {
 
 configurarLogParaArquivo();
 
-let janelaPrincipal = null;
 let autoUpdateDisponivel = false;
 let checagemManualEmAndamento = false;
 
@@ -241,8 +257,19 @@ app.whenReady().then(async () => {
   // e faz sync com o Protheus + agenda os crons assim que é importado — a janela só espera o
   // servidor HTTP estar de fato escutando (servidorPronto), não a sincronização em segundo plano.
   const servidorUrl = require('node:url').pathToFileURL(path.join(__dirname, '..', 'server', 'server.js')).href;
-  const { servidorPronto } = await import(servidorUrl);
-  await servidorPronto;
+  try {
+    const { servidorPronto } = await import(servidorUrl);
+    await servidorPronto;
+  } catch (erro) {
+    console.error('[electron] Falha ao subir o servidor embutido:', erro);
+    const mensagem =
+      erro?.code === 'EADDRINUSE'
+        ? 'Já existe outra cópia do PDV Fort Fruit (ou outro programa) usando a porta 3001. Feche-a antes de abrir de novo.'
+        : `Não foi possível iniciar o servidor local: ${erro?.message || erro}`;
+    dialog.showErrorBox('PDV Fort Fruit', mensagem);
+    app.quit();
+    return;
+  }
 
   await criarJanela();
 

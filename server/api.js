@@ -572,10 +572,14 @@ export function iniciarApi() {
     });
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const servidor = app.listen(PORTA, () => {
       console.log(`[api] Servindo produtos em http://localhost:${PORTA}`);
       resolve(servidor);
     });
+    // Sem isso, um erro aqui (ex: EADDRINUSE — porta já em uso por outra instância) nunca resolve
+    // nem rejeita essa Promise: o Node trata como "Unhandled 'error' event" e derruba o processo
+    // com uma stacktrace crua, em vez de deixar quem chamou iniciarApi() tratar o erro.
+    servidor.on('error', reject);
   });
 }
