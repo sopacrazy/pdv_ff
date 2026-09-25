@@ -3,7 +3,7 @@
 // aqui dentro usamos import() dinâmico pra carregar o servidor (server/server.js, que é ESM).
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, Menu, dialog, nativeTheme } = require('electron');
+const { app, BrowserWindow, Menu, dialog, nativeTheme, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
 const PORTA = 3001;
@@ -14,6 +14,40 @@ const PORTA = 3001;
 // isso tem que ser setado ANTES do import() do servidor lá embaixo.
 process.env.PDV_DB_DIR = path.join(app.getPath('userData'), 'data');
 process.env.API_PORT = String(PORTA);
+
+// O app empacotado não tem terminal — sem isso, todo console.log/warn/error do servidor embutido
+// (sync com Protheus, fila de envio, etc.) simplesmente desaparece, e não tem como diagnosticar
+// nada remotamente. Gravamos tudo num arquivo simples em texto, acessível pelo menu Ajuda > Ver logs.
+const LOG_DIR = path.join(app.getPath('userData'), 'logs');
+const LOG_FILE = path.join(LOG_DIR, 'app.log');
+
+function configurarLogParaArquivo() {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+  // Rotação bem simples: se o log antigo já estiver grande, guarda como .old (sobrescrevendo o
+  // anterior) e começa um arquivo novo — evita crescer pra sempre num caixa que fica ligado dias.
+  try {
+    if (fs.statSync(LOG_FILE).size > 5 * 1024 * 1024) {
+      fs.renameSync(LOG_FILE, `${LOG_FILE}.old`);
+    }
+  } catch {
+    // arquivo ainda não existe — primeira execução, segue normal
+  }
+
+  const stream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
+  const niveis = ['log', 'info', 'warn', 'error'];
+  for (const nivel of niveis) {
+    const original = console[nivel].bind(console);
+    console[nivel] = (...args) => {
+      original(...args);
+      const texto = args
+        .map((a) => (typeof a === 'string' ? a : a instanceof Error ? (a.stack || a.message) : JSON.stringify(a)))
+        .join(' ');
+      stream.write(`[${new Date().toISOString()}] [${nivel.toUpperCase()}] ${texto}\n`);
+    };
+  }
+}
+
+configurarLogParaArquivo();
 
 let janelaPrincipal = null;
 let autoUpdateDisponivel = false;
@@ -137,6 +171,21 @@ function montarMenu() {
       label: 'Ajuda',
       submenu: [
         { label: 'Verificar atualizações agora', click: () => verificarAtualizacoesManualmente() },
+        { type: 'separator' },
+        {
+          label: 'Ver logs',
+          click: async () => {
+            const erro = await shell.openPath(LOG_FILE);
+            if (erro) {
+              dialog.showMessageBox(janelaPrincipal, {
+                type: 'error',
+                title: 'Ver logs',
+                message: 'Não foi possível abrir o arquivo de log.',
+                detail: erro,
+              });
+            }
+          },
+        },
         { type: 'separator' },
         {
           label: 'Sobre o PDV Fort Fruit',
