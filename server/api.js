@@ -536,6 +536,10 @@ export function iniciarApi() {
       res.json(null);
       return;
     }
+    if (!/^[0-9.]+$/.test(codigo)) {
+      res.status(400).json({ erro: 'O código deve conter somente números e ponto.' });
+      return;
+    }
     const db = getDb();
     const linha = db
       .prepare('SELECT * FROM produtos WHERE codigo = ? OR codigo_barras = ?')

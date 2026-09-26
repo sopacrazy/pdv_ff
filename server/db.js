@@ -11,10 +11,20 @@ const ADMIN_SENHA_PADRAO = process.env.ADMIN_SENHA || 'admin123';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// No app empacotado (Electron), o código roda dentro do instalador (read-only) — o processo
-// principal aponta PDV_DB_DIR pra pasta de dados do usuário (app.getPath('userData')) antes de
-// carregar o servidor. Sem essa variável (dev, servidor web solto), mantém o caminho de sempre.
-const DB_DIR = process.env.PDV_DB_DIR || path.join(__dirname, 'data');
+export function resolverDiretorioBanco({
+  diretorioConfigurado = process.env.PDV_DB_DIR,
+  plataforma = process.platform,
+  appData = process.env.APPDATA,
+  diretorioServidor = __dirname,
+} = {}) {
+  if (diretorioConfigurado) return path.resolve(diretorioConfigurado);
+  // Electron e localhost usam a mesma pasta persistente, fora da instalação e do projeto.
+  // `react-example` é o app.getName() histórico e já identifica o banco usado em produção.
+  if (plataforma === 'win32' && appData) return path.join(appData, 'react-example', 'data');
+  return path.join(diretorioServidor, 'data');
+}
+
+const DB_DIR = resolverDiretorioBanco();
 const DB_PATH = path.join(DB_DIR, 'pdv.db');
 
 let instancia = null;
@@ -27,6 +37,20 @@ function garantirColuna(db, tabela, coluna, definicao) {
   }
 }
 
+function aplicarMigracao(db, versao, descricao, executar) {
+  if (db.prepare('SELECT 1 FROM schema_migrations WHERE versao = ?').get(versao)) return;
+  const migrar = db.transaction(() => {
+    executar();
+    db.prepare('INSERT INTO schema_migrations (versao, descricao, aplicada_em) VALUES (?, ?, ?)').run(
+      versao,
+      descricao,
+      new Date().toISOString()
+    );
+  });
+  migrar();
+  console.log(`[db] Migração ${versao} aplicada: ${descricao}`);
+}
+
 export function getDb() {
   if (instancia) return instancia;
 
@@ -36,6 +60,7 @@ export function getDb() {
 
   instancia = new Database(DB_PATH);
   instancia.pragma('journal_mode = WAL');
+  console.log(`[db] Banco SQLite persistente: ${DB_PATH}`);
 
   instancia.exec(`
     CREATE TABLE IF NOT EXISTS produtos (
@@ -135,6 +160,12 @@ export function getDb() {
       atualizado_em TEXT,
       PRIMARY KEY (filial, codigo)
     );
+
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      versao INTEGER PRIMARY KEY,
+      descricao TEXT NOT NULL,
+      aplicada_em TEXT NOT NULL
+    );
   `);
 
   instancia.prepare('INSERT OR IGNORE INTO caixa_estado (id, aberto, fundo_de_troco) VALUES (1, 0, 0)').run();
@@ -158,6 +189,7 @@ export function getDb() {
     console.log(`[db] Usuário admin inicial criado — login: "${ADMIN_LOGIN_PADRAO}" senha: "${ADMIN_SENHA_PADRAO}" (troque depois de logar).`);
   }
 
+  aplicarMigracao(instancia, 1, 'Estrutura acumulada do PDV até a versão 0.1.7', () => {
   // Soft delete (padrão D_E_L_E_T_ do Protheus: '' = ativo, '*' = excluído) e status de integração.
   garantirColuna(instancia, 'vendas', 'deletado', "TEXT NOT NULL DEFAULT ''");
   garantirColuna(instancia, 'vendas', 'status_protheus', "TEXT NOT NULL DEFAULT 'LOCAL'");
@@ -193,8 +225,6 @@ export function getDb() {
   garantirColuna(instancia, 'vendas', 'bilhete_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'resultado_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'payload_protheus', 'TEXT');
-  // Identificador legível enviado no `_id` do 4Sales e gravado pelo Protheus em Z4_XPED4SA.
-  garantirColuna(instancia, 'vendas', 'id_integracao', 'TEXT');
   garantirColuna(instancia, 'vendas', 'protheus_atualizado_em', 'TEXT');
   garantirColuna(instancia, 'clientes', 'cond_pagamento', 'TEXT');
   // Data de operação (YYYY-MM-DD): quando setada, novas vendas gravam essa data em data_local (o
@@ -202,6 +232,11 @@ export function getDb() {
   // pela loja que opera de madrugada e adianta a data no Protheus antes da virada. NULL = automático
   // (usa a data real). Nunca afeta criado_em, que continua sendo o horário real da venda.
   garantirColuna(instancia, 'caixa_estado', 'data_operacao', 'TEXT');
+  });
+
+  aplicarMigracao(instancia, 2, 'Identificador legível e persistente da integração 4Sales', () => {
+    garantirColuna(instancia, 'vendas', 'id_integracao', 'TEXT');
+  });
 
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
   // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.

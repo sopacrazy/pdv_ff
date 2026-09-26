@@ -65,22 +65,14 @@ export const PdvPage = () => {
   }, []);
 
   // Handlers do Leitor
-  const extrairQtdECodigo = (valor: string) => {
-    const match = valor.match(/^(\d+)[\*xX](.+)$/);
-    return {
-      qtd: match ? parseFloat(match[1]) || 1 : 1,
-      termo: (match ? match[2] : valor).trim(),
-    };
-  };
-
   const processarLeitura = async () => {
     if (!leitorValue.trim()) return;
 
-    const { qtd, termo: codigo } = extrairQtdECodigo(leitorValue);
+    const codigo = leitorValue.trim();
     const produto = await produtoService.buscarPorCodigoOuBarras(codigo);
 
     if (produto) {
-      adicionarItem(produto, qtd);
+      adicionarItem(produto, 1);
     } else {
       mostrarToast(`Produto não encontrado: ${codigo}`, 'erro');
     }
@@ -93,8 +85,7 @@ export const PdvPage = () => {
   // barras: ele "digita" rápido e nem sempre manda Enter depois; e agiliza quando o operador digita
   // o código curto de cabeça (comum em hortifruti, produto sem etiqueta de barras).
   useEffect(() => {
-    const { termo } = extrairQtdECodigo(leitorValue);
-    if (/^\d{3}\.\d{3}$/.test(termo)) {
+    if (/^\d{3}\.\d{3}$/.test(leitorValue)) {
       processarLeitura();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,11 +205,13 @@ export const PdvPage = () => {
               id="input-leitor"
               ref={inputLeitorRef}
               value={leitorValue}
-              onChange={(e) => setLeitorValue(e.target.value)}
+              onChange={(e) => setLeitorValue(e.target.value.replace(/[^0-9.]/g, ''))}
               onKeyDown={handleLeitorKeyDown}
               disabled={!isCaixaAberto}
               className="w-full h-18 text-2xl bg-slate-50 border-2 border-slate-300 focus:border-blue-500 rounded-xl px-6 text-slate-900 focus:outline-none focus:ring-4 focus:ring-blue-500/20 placeholder-slate-400 font-mono transition-all disabled:opacity-50"
-              placeholder="Código de barras ou código do produto (Ex: 3*1234) — F2 pra buscar por nome"
+              placeholder="Código de barras ou código do produto — somente números e ponto · F2 busca por nome"
+              inputMode="decimal"
+              pattern="[0-9.]*"
               autoComplete="off"
             />
           </div>
