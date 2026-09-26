@@ -3,8 +3,7 @@ import { LoginPage } from '../features/auth/LoginPage';
 import { HomePage } from '../features/home/HomePage';
 import { PdvPage } from '../features/pdv/PdvPage';
 import { ConsultasPage } from '../features/consultas/ConsultasPage';
-import { BilhetesPage } from '../features/bilhetes/BilhetesPage';
-import { BilheteFormPage } from '../features/bilhetes/BilheteFormPage';
+import { BilhetePdvPage } from '../features/bilhetes/BilhetePdvPage';
 import { AdminPage } from '../features/admin/AdminPage';
 import { UsuariosPage } from '../features/admin/UsuariosPage';
 import { ConfiguracoesPage } from '../features/admin/ConfiguracoesPage';
@@ -68,26 +67,18 @@ export function AppRoutes() {
         <Route
           path="/bilhetes"
           element={
-            <PrivateRoute>
-              <BilhetesPage />
-            </PrivateRoute>
+            <PdvRoute>
+              <BilhetePdvPage />
+            </PdvRoute>
           }
         />
         <Route
           path="/bilhetes/novo"
-          element={
-            <PrivateRoute>
-              <BilheteFormPage />
-            </PrivateRoute>
-          }
+          element={<Navigate to="/bilhetes" replace />}
         />
         <Route
           path="/bilhetes/:id"
-          element={
-            <PrivateRoute>
-              <BilheteFormPage />
-            </PrivateRoute>
-          }
+          element={<Navigate to="/bilhetes" replace />}
         />
         <Route
           path="/minha-conta"

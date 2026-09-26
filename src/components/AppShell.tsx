@@ -35,7 +35,13 @@ export function AppShell({ children, rotaAtiva, className }: AppShellProps) {
       titulo: 'Configure e valide sua conta Protheus em Minha conta',
     },
     { rotulo: 'Consultas', icone: Search, rota: '/consultas' },
-    { rotulo: 'Bilhete', icone: Ticket, rota: '/bilhetes', desativado: true },
+    {
+      rotulo: 'Bilhete',
+      icone: Ticket,
+      rota: '/bilhetes',
+      desativado: !usuario?.prontoParaVender,
+      titulo: 'Configure e valide sua conta Protheus em Minha conta',
+    },
     { rotulo: 'Minha conta', icone: UserRound, rota: '/minha-conta' },
     ...(usuario?.papel === 'ADMIN' ? [{ rotulo: 'Administrador', icone: ShieldCheck, rota: '/admin' }] : []),
   ];

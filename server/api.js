@@ -11,6 +11,8 @@ import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES, pareceFalhaDe
 import { cifrarSenhaProtheus, decifrarSenhaProtheus } from './credenciais-protheus.js';
 import { consultarVendedorDoUsuario } from './protheus-usuario.js';
 import { montarIdIntegracao } from './id-integracao.js';
+import { getProtheusCacheDb } from './protheus-cache-db.js';
+import { sincronizarCreditoCliente, sincronizarPrecosTabela } from './sync-bilhetes-4sales.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +32,9 @@ function paraProdutoFrontend(linha) {
     preco: linha.preco,
     codigoBarras: linha.codigo_barras || '',
     grupo: '',
+    saldoEstoque: linha.saldo_estoque == null ? null : Number(linha.saldo_estoque),
+    estoqueReservado: linha.estoque_reservado == null ? null : Number(linha.estoque_reservado),
+    estoqueAtualizadoEm: linha.estoque_atualizado_em || null,
   };
 }
 
@@ -61,7 +66,110 @@ function paraVendaResumo(linha) {
     resultadoProtheus: linha.resultado_protheus ? JSON.parse(linha.resultado_protheus) : null,
     valorRecebido: linha.valor_recebido,
     troco: linha.troco,
+    tipoOperacao: linha.tipo_operacao || 'PDV',
+    clienteCodigo: linha.cliente_codigo || null,
+    clienteLoja: linha.cliente_loja || null,
+    tabelaPreco: linha.tabela_preco || null,
   };
+}
+
+const PRODUTOS_BASQUETA = new Set([
+  '499.003', '499.004', '141.002', '173.001', '499.001', '500.007', '141.001', '141.004',
+  '141.003', '141.005', '141.006', '141.007', '141.008', '499.012', '238.001', '499.009', '499.007',
+]);
+
+export function validarBilheteLocal(venda) {
+  const erros = [];
+  const cache = getProtheusCacheDb();
+  const codigo = String(venda?.cliente?.codigo || '').trim();
+  const loja = String(venda?.cliente?.loja || '').trim();
+  const itens = Array.isArray(venda?.itens) ? venda.itens : [];
+  const hoje = dataLocalYYYYMMDD();
+  const clienteAVista = codigo === '0001' || codigo === '000001';
+  const nomeClienteAVista = String(venda?.cliente?.nomeAVista || '').trim();
+  const cliente = cache.prepare(`
+    SELECT c.*, f.vencimento_mais_antigo,
+           cr.saldo_credito, cr.inadimplencia, cr.atualizado_em AS credito_atualizado_em,
+           cp.descricao AS condicao_descricao, cp.status AS condicao_status, cp.excluido AS condicao_excluida,
+           tp.descricao AS tabela_descricao, tp.inicio AS tabela_inicio, tp.fim AS tabela_fim,
+           tp.status AS tabela_status, tp.excluido AS tabela_excluida
+    FROM clientes c
+    LEFT JOIN situacoes_financeiras f ON f.filial=c.filial AND f.codigo=c.codigo AND f.loja=c.loja AND f.excluido=0
+    LEFT JOIN situacoes_credito cr ON cr.filial=c.filial AND cr.codigo=c.codigo AND cr.loja=c.loja
+    LEFT JOIN condicoes_pagamento cp ON cp.filial=c.filial AND cp.codigo=c.condicao_pagamento
+    LEFT JOIN tabelas_preco tp ON tp.filial=c.filial AND tp.codigo=c.tabela_preco
+    WHERE c.filial='01' AND c.codigo=? AND c.loja=? AND c.excluido=0
+  `).get(codigo, loja);
+
+  if (!cliente) erros.push('Cliente não encontrado no cadastro local sincronizado do Protheus.');
+  if (clienteAVista && !nomeClienteAVista) erros.push('Informe o nome do cliente à vista.');
+  if (clienteAVista && nomeClienteAVista.length > 40) erros.push('O nome do cliente à vista aceita no máximo 40 caracteres.');
+  if (!itens.length) erros.push('Inclua ao menos um produto no Bilhete.');
+  if (itens.length > 99) erros.push('O Bilhete aceita no máximo 99 itens. Divida a venda.');
+  if (Number(venda?.total) > 999999) erros.push('Bilhete superior a R$ 9.999,99. A SEFA exige dividir a venda.');
+
+  if (cliente) {
+    if (!cliente.condicao_pagamento) erros.push('Cliente sem condição de pagamento vinculada no Protheus.');
+    else if (!cliente.condicao_descricao || cliente.condicao_excluida) erros.push(`Condição ${cliente.condicao_pagamento} não encontrada ou excluída.`);
+    if (!cliente.tabela_preco) erros.push('Cliente sem tabela de preço vinculada no Protheus.');
+    else if (!cliente.tabela_descricao || cliente.tabela_excluida) erros.push(`Tabela ${cliente.tabela_preco} não encontrada ou excluída.`);
+    else {
+      if (cliente.tabela_status === '2') erros.push(`Tabela ${cliente.tabela_preco} está inativa.`);
+      if (cliente.tabela_inicio && cliente.tabela_inicio > hoje) erros.push(`Tabela ${cliente.tabela_preco} ainda não está vigente.`);
+      if (cliente.tabela_fim && cliente.tabela_fim < hoje) erros.push(`Tabela ${cliente.tabela_preco} está vencida desde ${cliente.tabela_fim}.`);
+    }
+    if (cliente.risco !== 'A' && cliente.vencimento_mais_antigo) {
+      const tolerancia = new Date(`${hoje}T12:00:00`);
+      tolerancia.setDate(tolerancia.getDate() - 2);
+      if (cliente.vencimento_mais_antigo < dataLocalYYYYMMDD(tolerancia)) {
+        erros.push(`Cliente possui títulos em atraso desde ${cliente.vencimento_mais_antigo}. Verifique com o financeiro.`);
+      }
+    }
+    const creditoAtualizado = cliente.credito_atualizado_em && new Date(cliente.credito_atualizado_em).getTime();
+    if (!creditoAtualizado) {
+      erros.push('Saldo de crédito ainda não foi sincronizado para este cliente. Conecte a VPN e aguarde a sincronização.');
+    } else if (Date.now() - creditoAtualizado > 10 * 60 * 1000) {
+      erros.push('Saldo de crédito do cliente está desatualizado. Conecte a VPN e aguarde a sincronização.');
+    } else {
+      const condicao = String(cliente.condicao_pagamento || '').trim();
+      const permiteSemCredito = condicao.startsWith('9') || ['001', '200', '033'].includes(condicao);
+      const totalReais = Number(venda?.total || 0) / 100;
+      if (!permiteSemCredito && Number(cliente.saldo_credito) < totalReais) {
+        erros.push(`Cliente sem saldo de crédito suficiente. Disponível: R$ ${Number(cliente.saldo_credito || 0).toFixed(2).replace('.', ',')}.`);
+      }
+    }
+  }
+
+  let temMc = false;
+  let temOutroTipo = false;
+  let temBasqueta = false;
+  let temOutroProduto = false;
+  let totalCalculado = 0;
+  const buscarProduto = cache.prepare('SELECT * FROM produtos_bilhete WHERE codigo=? AND excluido=0');
+  const buscarPreco = cache.prepare('SELECT * FROM precos WHERE tabela=? AND produto=? AND ativo=1');
+  for (const item of itens) {
+    const codigoProduto = String(item.produto?.codigo || '').trim();
+    const produto = buscarProduto.get(codigoProduto);
+    const preco = cliente?.tabela_preco ? buscarPreco.get(cliente.tabela_preco, codigoProduto) : null;
+    if (!produto) erros.push(`Produto ${codigoProduto || '(sem código)'} não encontrado no cadastro local do Bilhete.`);
+    if (!preco || !(preco.preco > 0)) erros.push(`Produto ${codigoProduto} não está ativo na tabela ${cliente?.tabela_preco || '(sem tabela)'}.`);
+    else if (Math.round(preco.preco * 100) > Number(item.valorUnitario)) erros.push(`Preço do produto ${codigoProduto} está abaixo do mínimo da tabela ${cliente.tabela_preco}.`);
+    if (!(Number(item.quantidade) > 0)) erros.push(`Quantidade inválida no produto ${codigoProduto}.`);
+    totalCalculado += Math.round(Number(item.quantidade) * Number(item.valorUnitario)) - Number(item.desconto || 0);
+    if (produto?.tipo === 'MC') temMc = true; else temOutroTipo = true;
+    if (PRODUTOS_BASQUETA.has(codigoProduto)) temBasqueta = true; else temOutroProduto = true;
+  }
+  if (temMc && temOutroTipo) erros.push('Produtos do tipo MC precisam ser vendidos em um Bilhete separado.');
+  if (temBasqueta && temOutroProduto) erros.push('Basquetas precisam ser vendidas em um Bilhete separado.');
+  if (totalCalculado !== Number(venda?.total) || Number(venda?.desconto || 0) !== 0) erros.push('O total do Bilhete diverge dos itens ou possui desconto não autorizado.');
+
+  const sincronizacoes = cache.prepare("SELECT chave, atualizado_em FROM cache_metadata WHERE chave IN ('clientes_sync','financeiro_sync','produtos_sync',?)").all(`precos_${cliente?.tabela_preco || ''}`);
+  const porChave = new Map(sincronizacoes.map((s) => [s.chave, s.atualizado_em]));
+  for (const [chave, rotulo] of [['clientes_sync', 'clientes'], ['financeiro_sync', 'financeiro'], ['produtos_sync', 'produtos'], [`precos_${cliente?.tabela_preco || ''}`, 'preços']]) {
+    const atualizado = porChave.get(chave);
+    if (!atualizado || Date.now() - new Date(atualizado).getTime() > 10 * 60 * 1000) erros.push(`Cache de ${rotulo} desatualizado. Conecte a VPN e aguarde a sincronização.`);
+  }
+  return { erros: [...new Set(erros)], cliente };
 }
 
 function buscarConfiguracaoSistema(db) {
@@ -547,6 +655,129 @@ export function iniciarApi() {
     res.json(linha ? paraProdutoFrontend(linha) : null);
   });
 
+  app.get('/api/bilhetes/clientes', autenticarMiddleware, (req, res) => {
+    const termo = String(req.query.q || '').trim();
+    if (termo.length < 2) return res.json([]);
+    const like = `%${termo}%`;
+    const linhas = getProtheusCacheDb().prepare(`
+      SELECT c.*, f.vencimento_mais_antigo,
+             cr.saldo_credito, cr.inadimplencia, cr.atualizado_em AS credito_atualizado_em,
+             cp.descricao AS condicao_descricao,
+             tp.descricao AS tabela_descricao, tp.inicio AS tabela_inicio, tp.fim AS tabela_fim, tp.status AS tabela_status
+      FROM clientes c
+      LEFT JOIN situacoes_financeiras f ON f.filial=c.filial AND f.codigo=c.codigo AND f.loja=c.loja AND f.excluido=0
+      LEFT JOIN situacoes_credito cr ON cr.filial=c.filial AND cr.codigo=c.codigo AND cr.loja=c.loja
+      LEFT JOIN condicoes_pagamento cp ON cp.filial=c.filial AND cp.codigo=c.condicao_pagamento AND cp.excluido=0
+      LEFT JOIN tabelas_preco tp ON tp.filial=c.filial AND tp.codigo=c.tabela_preco AND tp.excluido=0
+      WHERE c.filial='01' AND c.excluido=0
+        AND (c.codigo LIKE ? OR c.nome LIKE ? OR c.fantasia LIKE ? OR c.cpf_cnpj LIKE ?)
+      ORDER BY
+        CASE
+          WHEN TRIM(c.codigo) = ? THEN 0
+          WHEN LTRIM(TRIM(c.codigo), '0') = LTRIM(?, '0') THEN 1
+          ELSE 2
+        END,
+        c.nome
+      LIMIT 50
+    `).all(like, like, like, like, termo, termo);
+    res.json(linhas.map((c) => ({
+      codigo: c.codigo, loja: c.loja, nome: c.nome, fantasia: c.fantasia, cpfCnpj: c.cpf_cnpj,
+      condicaoPagamento: c.condicao_pagamento, condicaoDescricao: c.condicao_descricao,
+      tabelaPreco: c.tabela_preco, tabelaDescricao: c.tabela_descricao,
+      risco: c.risco, limiteCredito: Math.round((c.limite_credito || 0) * 100), status: c.status,
+      saldoCredito: c.saldo_credito == null ? null : Math.round(c.saldo_credito * 100),
+      inadimplencia: c.inadimplencia == null ? null : Number(c.inadimplencia),
+      vencimentoMaisAntigo: c.vencimento_mais_antigo,
+      creditoAtualizadoEm: c.credito_atualizado_em,
+      atualizadoEm: c.atualizado_em,
+    })));
+  });
+
+  app.post('/api/bilhetes/clientes/:codigo/:loja/sincronizar-financeiro', autenticarMiddleware, async (req, res) => {
+    const codigo = String(req.params.codigo || '').trim();
+    const loja = String(req.params.loja || '').trim();
+    const existe = getProtheusCacheDb().prepare("SELECT 1 FROM clientes WHERE filial='01' AND codigo=? AND loja=? AND excluido=0").get(codigo, loja);
+    if (!existe) return res.status(404).json({ erro: 'Cliente não encontrado no cache 4Sales.' });
+    try {
+      const resultado = await sincronizarCreditoCliente(codigo, loja, { atualizarCadastro: true });
+      res.json({ sucesso: true, atualizadoEm: resultado.atualizadoEm });
+    } catch (erro) {
+      res.status(503).json({ erro: erro.message || 'Não foi possível atualizar os indicadores financeiros.' });
+    }
+  });
+
+  app.post('/api/bilhetes/validar', autenticarMiddleware, (req, res) => {
+    const resultado = validarBilheteLocal(req.body);
+    res.status(resultado.erros.length ? 422 : 200).json({ valido: resultado.erros.length === 0, erros: resultado.erros });
+  });
+
+  app.get('/api/bilhetes/produtos', autenticarMiddleware, async (req, res) => {
+    try {
+      const codigoCliente = String(req.query.cliente || '').trim();
+      const loja = String(req.query.loja || '').trim();
+      const termo = String(req.query.q || '').trim();
+      if (!termo) return res.json([]);
+      const cache = getProtheusCacheDb();
+      const cliente = codigoCliente && loja
+        ? cache.prepare("SELECT * FROM clientes WHERE filial='01' AND codigo=? AND loja=? AND excluido=0").get(codigoCliente, loja)
+        : null;
+      if ((codigoCliente || loja) && !cliente) return res.status(404).json({ erro: 'Cliente não encontrado no cache 4Sales.' });
+      if (cliente && !cliente.tabela_preco) return res.status(422).json({ erro: 'Cliente sem tabela de preço vinculada.' });
+
+      // Sem cliente, F2 funciona como consulta da tabela geral 001. Ao escolher um cliente,
+      // a pesquisa muda automaticamente para a tabela vinculada ao cadastro dele.
+      const tabelaConsulta = cliente?.tabela_preco || '001';
+      const quantidadePrecos = cache.prepare('SELECT COUNT(*) AS n FROM precos WHERE tabela=?').get(tabelaConsulta).n;
+      if (!quantidadePrecos) {
+        // Somente a primeira carga precisa aguardar a REST: ainda não existe preço local para
+        // responder. Depois disso, toda pesquisa é atendida imediatamente pelo SQLite.
+        await sincronizarPrecosTabela(tabelaConsulta);
+      } else {
+        // A atualização vencida acontece em segundo plano. Nunca faça o operador esperar a rede
+        // ou o Protheus a cada pesquisa digitada.
+        void sincronizarPrecosTabela(tabelaConsulta).catch((erro) => {
+          console.warn(`[bilhetes] Tabela ${tabelaConsulta} offline; usando preços locais: ${erro.message}`);
+        });
+      }
+
+      const somenteCodigo = /^[0-9.]+$/.test(termo);
+      // O catálogo 4Sales usado pelo Bilhete traz o código do produto, mas nem sempre traz o EAN.
+      // Quando a leitura for numérica, resolvemos primeiro o código de barras no catálogo local do
+      // PDV e então aplicamos preço/validade da tabela específica do cliente do Bilhete.
+      const dbLocal = getDb();
+      const produtoLocalPorLeitura = somenteCodigo
+        ? dbLocal.prepare('SELECT codigo FROM produtos WHERE codigo=? OR codigo_barras=? LIMIT 1').get(termo, termo)
+        : null;
+      const codigoResolvido = produtoLocalPorLeitura?.codigo || termo;
+      const produtos = somenteCodigo
+        ? cache.prepare('SELECT * FROM produtos_bilhete WHERE (codigo=? OR codigo_barras=?) AND excluido=0 LIMIT 20').all(codigoResolvido, termo)
+        : cache.prepare(`
+            SELECT * FROM produtos_bilhete
+            WHERE excluido=0 AND (descricao LIKE ? COLLATE NOCASE OR codigo LIKE ? COLLATE NOCASE)
+            ORDER BY CASE WHEN descricao LIKE ? COLLATE NOCASE THEN 0 ELSE 1 END, descricao
+            LIMIT 50
+          `).all(`%${termo}%`, `%${termo}%`, `${termo}%`);
+      const buscarPreco = cache.prepare('SELECT preco FROM precos WHERE tabela=? AND produto=? AND ativo=1');
+      const buscarDadosLocais = dbLocal.prepare('SELECT codigo_barras, segunda_unidade, fator_conversao, tipo_conversao FROM produtos WHERE codigo=?');
+      res.json(produtos.map((produto) => {
+        const preco = buscarPreco.get(tabelaConsulta, produto.codigo)?.preco;
+        if (!(preco > 0)) return null;
+        const dadosLocais = buscarDadosLocais.get(produto.codigo) || {};
+        return paraProdutoFrontend({
+          ...produto,
+          preco,
+          codigo_barras: dadosLocais.codigo_barras || produto.codigo_barras || '',
+          segunda_unidade: dadosLocais.segunda_unidade || produto.segunda_unidade || null,
+          fator_conversao: dadosLocais.fator_conversao || produto.fator_conversao || null,
+          tipo_conversao: dadosLocais.tipo_conversao || produto.tipo_conversao || null,
+          unidade: produto.unidade,
+        });
+      }).filter(Boolean));
+    } catch (erro) {
+      res.status(503).json({ erro: erro instanceof Error ? erro.message : 'Falha ao consultar produtos do Bilhete.' });
+    }
+  });
+
   app.get('/api/produtos/buscar', (req, res) => {
     const termo = String(req.query.q || '').trim();
     if (termo.length < 2) {
@@ -627,7 +858,7 @@ export function iniciarApi() {
       .prepare(
         `SELECT data_local AS data, COUNT(*) AS quantidade, SUM(total) AS total
          FROM vendas
-         WHERE deletado = '' AND data_local >= ?
+         WHERE deletado = '' AND tipo_operacao = 'PDV' AND data_local >= ?
          GROUP BY data_local`
       )
       .all(dias[0]);
@@ -661,6 +892,17 @@ export function iniciarApi() {
     }
 
     const db = getDb();
+    if (venda.tipoOperacao === 'BILHETE') {
+      const validacao = validarBilheteLocal(venda);
+      if (validacao.erros.length) return res.status(422).json({ erro: validacao.erros.join('\n'), erros: validacao.erros });
+      const clienteCache = validacao.cliente;
+      venda.formaPagamento = clienteCache.condicao_pagamento;
+      const codigoCliente = String(venda.cliente?.codigo || '').trim();
+      const clienteAVista = codigoCliente === '0001' || codigoCliente === '000001';
+      venda.cliente.nome = clienteAVista ? String(venda.cliente?.nomeAvista || venda.cliente?.nomeAVista || '').trim().toUpperCase() : clienteCache.nome;
+      venda.cliente.cpf = clienteCache.cpf_cnpj;
+      venda.cliente.tabelaPreco = clienteCache.tabela_preco;
+    }
     const agora = new Date();
     const id = randomUUID();
     // Se a loja adiantou a "data de operação" (funcionamento de madrugada, ver /api/caixa/data-operacao),
@@ -669,8 +911,8 @@ export function iniciarApi() {
     const dataLocal = dataOperacao || dataLocalYYYYMMDD(agora);
 
     const inserirVenda = db.prepare(`
-      INSERT INTO vendas (id, id_integracao, numero_cupom, loja, caixa, operador, usuario_id, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local, valor_recebido, troco)
-      VALUES (@id, @id_integracao, @numero_cupom, @loja, @caixa, @operador, @usuario_id, @cliente_nome, @cliente_cpf, @subtotal, @desconto, @total, @forma_pagamento, @criado_em, @data_local, @valor_recebido, @troco)
+      INSERT INTO vendas (id, id_integracao, numero_cupom, loja, caixa, operador, usuario_id, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local, valor_recebido, troco, tipo_operacao, cliente_codigo, cliente_loja, tabela_preco)
+      VALUES (@id, @id_integracao, @numero_cupom, @loja, @caixa, @operador, @usuario_id, @cliente_nome, @cliente_cpf, @subtotal, @desconto, @total, @forma_pagamento, @criado_em, @data_local, @valor_recebido, @troco, @tipo_operacao, @cliente_codigo, @cliente_loja, @tabela_preco)
     `);
 
     const inserirItem = db.prepare(`
@@ -718,6 +960,10 @@ export function iniciarApi() {
         data_local: dataLocal,
         valor_recebido: venda.valorRecebido ?? null,
         troco: venda.troco ?? null,
+        tipo_operacao: venda.tipoOperacao === 'BILHETE' ? 'BILHETE' : 'PDV',
+        cliente_codigo: venda.cliente?.codigo || (venda.tipoOperacao === 'BILHETE' ? null : 'YDOVT3'),
+        cliente_loja: venda.cliente?.loja || '01',
+        tabela_preco: venda.cliente?.tabelaPreco || (venda.tipoOperacao === 'BILHETE' ? null : '015'),
       });
 
       for (const item of venda.itens) {
@@ -804,7 +1050,8 @@ export function iniciarApi() {
     // Já aconteceu de a Protheus levar mais de 60s pra responder mesmo tendo processado certinho —
     // sem motivo pra esse prazo ser mais curto que o do envio manual, já que não trava ninguém.
     const rapido = req.query.rapido === '1';
-    const opcoes = rapido ? { timeoutMs: 150000 } : undefined;
+    const reprocessar = req.query.reprocessar === '1';
+    const opcoes = { ...(rapido ? { timeoutMs: 150000 } : {}), permitirRejeitado: reprocessar };
     const { http, ...corpo } = await enviarVendaAoProtheus(db, req.params.id, opcoes);
     res.status(http).json(corpo);
   });

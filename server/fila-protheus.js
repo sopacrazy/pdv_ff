@@ -22,13 +22,15 @@ export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
 
   const agora = new Date();
   const limiteRetentativa = new Date(agora.getTime() - RETRY_STATUS_INCERTO_MS).toISOString();
+  const permitirRejeitado = Boolean(opcoes?.permitirRejeitado);
   const reservada = db.prepare(`
     UPDATE vendas SET status_protheus = 'PREPARANDO', protheus_atualizado_em = ?
     WHERE id = ? AND (
       status_protheus = 'LOCAL'
       OR (status_protheus IN ('CONFERIR', 'PREPARANDO') AND protheus_atualizado_em IS NOT NULL AND protheus_atualizado_em < ?)
+      OR (status_protheus = 'REJEITADO' AND ? = 1)
     )
-  `).run(agora.toISOString(), venda.id, limiteRetentativa);
+  `).run(agora.toISOString(), venda.id, limiteRetentativa, permitirRejeitado ? 1 : 0);
   if (!reservada.changes) return { sucesso: false, http: 409, erro: 'Envio já em andamento ou tentado recentemente demais — aguarde antes de reenviar.' };
   let preparado;
   let credenciaisProtheus;
@@ -107,7 +109,7 @@ export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
   try {
     const resultado = await enviarVenda4Sales(preparado, { ...opcoes, credenciaisProtheus });
     db.prepare('UPDATE vendas SET status_protheus = ?, bilhete_protheus = ?, resultado_protheus = ?, protheus_atualizado_em = ? WHERE id = ?').run(
-      resultado.sucesso ? 'INTEGRADO' : 'CONFERIR',
+      resultado.sucesso ? 'INTEGRADO' : resultado.resultadoDesconhecido ? 'CONFERIR' : 'REJEITADO',
       resultado.bilhete,
       JSON.stringify(resultado),
       new Date().toISOString(),
@@ -126,10 +128,9 @@ export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
 // então pode dar bastante folga por tentativa.
 const TIMEOUT_FILA_MS = 60000;
 
-// Hoje o PDV só salva local ao finalizar (não dispara envio nenhum) — é esta fila, rodando a cada
-// 2 minutos, que entrega tudo ao Protheus. O atraso mínimo aqui é só uma folga de segurança contra
-// uma tentativa manual (botão "Enviar" em Consultas) acontecer bem no instante da criação da venda;
-// a reserva atômica (status_protheus LOCAL -> PREPARANDO) já impede duplicidade de qualquer forma.
+// Esta fila é a garantia de entrega para PDV e Bilhete. As telas disparam o primeiro envio em
+// segundo plano logo após salvar; se faltar rede, o app fechar ou o servidor reiniciar, a fila
+// retoma o registro LOCAL usando o mesmo ID de integração, sem duplicar no Protheus.
 const TEMPO_MINIMO_ANTES_DE_TENTAR_MS = 90000;
 
 let processando = false;

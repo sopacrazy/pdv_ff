@@ -18,7 +18,7 @@ function criarDb() {
       forma_pagamento TEXT, criado_em TEXT, data_local TEXT, deletado TEXT NOT NULL DEFAULT '',
       status_protheus TEXT NOT NULL DEFAULT 'LOCAL', valor_recebido INTEGER, troco INTEGER,
       editado_em TEXT, bilhete_protheus TEXT, resultado_protheus TEXT, payload_protheus TEXT,
-      protheus_atualizado_em TEXT, id_integracao TEXT
+      protheus_atualizado_em TEXT, id_integracao TEXT, tipo_operacao TEXT NOT NULL DEFAULT 'PDV'
     );
     CREATE TABLE venda_itens (
       id TEXT PRIMARY KEY, venda_id TEXT NOT NULL, codigo_produto TEXT, descricao TEXT,
@@ -38,9 +38,9 @@ const HA_5_MINUTOS = () => new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
 function inserirVenda(db, id, overrides = {}) {
   db.prepare(`
-    INSERT INTO vendas (id, numero_cupom, loja, caixa, operador, usuario_id, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local)
-    VALUES (@id, '000001', '01', '001', 'Operador Teste', 'usuario-teste', 'Cliente', '', 33000, 0, 33000, '033', @criado_em, '2026-09-23')
-  `).run({ id, criado_em: overrides.criado_em || HA_5_MINUTOS() });
+    INSERT INTO vendas (id, numero_cupom, loja, caixa, operador, usuario_id, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local, tipo_operacao)
+    VALUES (@id, '000001', '01', '001', 'Operador Teste', 'usuario-teste', 'Cliente', '', 33000, 0, 33000, '033', @criado_em, '2026-09-23', @tipo_operacao)
+  `).run({ id, criado_em: overrides.criado_em || HA_5_MINUTOS(), tipo_operacao: overrides.tipo_operacao || 'PDV' });
   db.prepare(`
     INSERT INTO venda_itens (id, venda_id, codigo_produto, descricao, quantidade, valor_unitario, desconto, valor_total)
     VALUES (@id, @venda_id, '199.029', 'MACA', 2, 16500, 0, 33000)
@@ -206,6 +206,18 @@ test('processarFilaProtheus não faz nada quando não há vendas pendentes', asy
   const db = criarDb();
   const r = await processarFilaProtheus('teste', db);
   assert.equal(r.processadas, 0);
+});
+
+test('fila automática envia Bilhete validado que permaneceu LOCAL', async () => {
+  await comCredenciais(async () => {
+    const db = criarDb();
+    inserirVenda(db, 'bilhete-1', { tipo_operacao: 'BILHETE' });
+    globalThis.fetch = mockFetchSucesso();
+    const r = await processarFilaProtheus('teste', db);
+    assert.equal(r.processadas, 1);
+    assert.equal(r.enviadas, 1);
+    assert.equal(db.prepare('SELECT status_protheus FROM vendas WHERE id=?').get('bilhete-1').status_protheus, 'INTEGRADO');
+  });
 });
 
 test('processarFilaProtheus ignora venda criada há pouco tempo (dá prioridade ao envio direto do PDV)', async () => {

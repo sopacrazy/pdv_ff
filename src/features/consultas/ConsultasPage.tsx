@@ -54,11 +54,13 @@ const ROTULO_STATUS: Record<'TODOS' | StatusProtheus, string> = {
   INTEGRADO: 'Integrado',
   CONFERIR: 'Conferir Protheus',
   PREPARANDO: 'Preparando',
+  REJEITADO: 'Rejeitado',
 };
 
-const StatusBadge = ({ status, atualizadoEm }: { status: StatusProtheus; atualizadoEm?: string | null }) => {
+const StatusBadge = ({ status, atualizadoEm, tipoOperacao }: { status: StatusProtheus; atualizadoEm?: string | null; tipoOperacao: 'PDV' | 'BILHETE' }) => {
   const integrado = status === 'INTEGRADO';
   const local = status === 'LOCAL';
+  const rejeitado = status === 'REJEITADO';
   const enviandoAgora =
     status === 'PREPARANDO' ||
     (status === 'CONFERIR' && !!atualizadoEm && Date.now() - new Date(atualizadoEm).getTime() < CONFERIR_EM_ANDAMENTO_MS);
@@ -76,12 +78,12 @@ const StatusBadge = ({ status, atualizadoEm }: { status: StatusProtheus; atualiz
     <span
       className={clsx(
         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap',
-        integrado ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+        integrado ? 'bg-red-100 text-red-700' : rejeitado ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'
       )}
-      title={integrado ? 'Já integrado ao Protheus' : local ? 'Salvo somente local' : 'Sem confirmação da Protheus — confira manualmente antes de reenviar'}
+      title={integrado ? 'Já integrado ao Protheus' : rejeitado ? 'O Protheus respondeu e rejeitou o envio' : local ? 'Salvo somente local' : 'Sem confirmação do Protheus — confira manualmente antes de reenviar'}
     >
-      <span className={clsx('w-1.5 h-1.5 rounded-full', integrado ? 'bg-red-500' : 'bg-green-500')} />
-      {integrado ? 'Integrado' : local ? 'Local' : 'Conferir Protheus'}
+      <span className={clsx('w-1.5 h-1.5 rounded-full', integrado ? 'bg-red-500' : rejeitado ? 'bg-amber-500' : 'bg-green-500')} />
+      {integrado ? 'Integrado' : rejeitado ? 'Rejeitado' : local && tipoOperacao === 'BILHETE' ? 'Aguardando envio' : local ? 'Local' : 'Conferir Protheus'}
     </span>
   );
 };
@@ -189,6 +191,15 @@ export function ConsultasPage() {
     } else {
       mostrarToast(`Falha ao excluir venda: ${resultado.erro}`, 'erro');
     }
+  };
+
+  const reprocessar = async (e: React.MouseEvent, venda: VendaResumo) => {
+    e.stopPropagation();
+    if (!token || venda.statusProtheus !== 'REJEITADO') return;
+    const resultado = await vendaService.reprocessarProtheus(venda.id, token);
+    if (resultado.sucesso) mostrarToast('Bilhete integrado ao Protheus', 'sucesso');
+    else mostrarToast(resultado.erro || 'O Protheus rejeitou novamente o Bilhete', 'erro');
+    await carregar();
   };
 
   // Os cards de resumo (total do dia, ticket médio, formas de pagamento) sempre refletem o dia
@@ -336,6 +347,9 @@ export function ConsultasPage() {
                         </td>
                         <td className="p-4 font-bold text-slate-800 whitespace-nowrap">
                           {venda.numeroCupom}
+                          {venda.tipoOperacao === 'BILHETE' && (
+                            <span className="ml-2 rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">BILHETE</span>
+                          )}
                           {venda.editadoEm && (
                             <span className="ml-2 text-xs font-normal text-amber-600" title={`Editado em ${new Date(venda.editadoEm).toLocaleString('pt-BR')}`}>
                               (editado)
@@ -350,7 +364,7 @@ export function ConsultasPage() {
                           </span>
                         </td>
                         <td className="p-4">
-                          <StatusBadge status={venda.statusProtheus} atualizadoEm={venda.protheusAtualizadoEm} />
+                          <StatusBadge status={venda.statusProtheus} atualizadoEm={venda.protheusAtualizadoEm} tipoOperacao={venda.tipoOperacao} />
                         </td>
                         <td className="p-4 font-mono text-sm text-slate-600">
                           {venda.bilheteProtheus || <span className="text-slate-300">—</span>}
@@ -367,6 +381,15 @@ export function ConsultasPage() {
                                 title="Marcar como integrada (depois de confirmar o bilhete no Protheus)"
                               >
                                 <CheckCheck size={16} />
+                              </button>
+                            )}
+                            {venda.statusProtheus === 'REJEITADO' && (
+                              <button
+                                onClick={(e) => reprocessar(e, venda)}
+                                className="p-2 rounded-lg text-amber-600 hover:text-amber-800 hover:bg-amber-50 transition-colors"
+                                title="Tentar enviar novamente após corrigir o motivo da rejeição"
+                              >
+                                <RefreshCw size={16} />
                               </button>
                             )}
                             <button
@@ -445,6 +468,11 @@ export function ConsultasPage() {
                                           {formatMoney(detalhe.troco || 0)}
                                         </div>
                                       </div>
+                                    </div>
+                                  )}
+                                  {detalhe.resultadoProtheus?.erro && (
+                                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+                                      Retorno do Protheus: {detalhe.resultadoProtheus.erro}
                                     </div>
                                   )}
                                 </>

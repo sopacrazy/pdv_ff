@@ -4,7 +4,7 @@ export interface VendaParaSalvar {
   numeroCupom: string;
   loja: string;
   caixa: string;
-  cliente: { nome: string; cpf: string } | null;
+  cliente: { nome: string; cpf: string; codigo?: string; loja?: string; tabelaPreco?: string; nomeAVista?: string } | null;
   itens: ItemVenda[];
   subtotal: number;
   desconto: number;
@@ -12,9 +12,10 @@ export interface VendaParaSalvar {
   formaPagamento: string;
   valorRecebido?: number;
   troco?: number;
+  tipoOperacao?: 'PDV' | 'BILHETE';
 }
 
-export type StatusProtheus = 'LOCAL' | 'INTEGRADO' | 'PREPARANDO' | 'CONFERIR';
+export type StatusProtheus = 'LOCAL' | 'INTEGRADO' | 'PREPARANDO' | 'CONFERIR' | 'REJEITADO';
 
 export interface VendaResumo {
   id: string;
@@ -36,6 +37,10 @@ export interface VendaResumo {
   resultadoProtheus?: ResultadoEnvioProtheus;
   valorRecebido: number | null;
   troco: number | null;
+  tipoOperacao: 'PDV' | 'BILHETE';
+  clienteCodigo?: string | null;
+  clienteLoja?: string | null;
+  tabelaPreco?: string | null;
 }
 
 export interface VendaDetalhe extends VendaResumo {
@@ -57,6 +62,7 @@ export interface ResultadoEnvioProtheus {
   payloadEnviado?: unknown;
   erro?: string;
   semInternet?: boolean;
+  bilhete?: string | null;
 }
 
 export const vendaService = {
@@ -128,6 +134,19 @@ export const vendaService = {
         return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}`, semInternet: corpo.semInternet };
       }
       return corpo;
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
+  },
+
+  reprocessarProtheus: async (id: string, token: string): Promise<ResultadoEnvioProtheus> => {
+    try {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/enviar-protheus?reprocessar=1`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      return { ...corpo, sucesso: Boolean(corpo.sucesso) };
     } catch (erro) {
       return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
     }

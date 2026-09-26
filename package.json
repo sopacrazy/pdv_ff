@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "sync:produtos": "node server/sync-produtos.js",
     "sync:cliente": "node server/sync-cliente.js",
+    "sync:bilhetes": "node server/sync-bilhetes-4sales.js",
     "server": "node server/server.js",
     "postinstall": "electron-builder install-app-deps",
     "electron:dev": "npm run build && electron .",

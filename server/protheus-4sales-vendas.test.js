@@ -20,6 +20,35 @@ test('usa a condição de pagamento do cadastro do cliente como paymentType, sem
  const p = montar({...venda, forma_pagamento: '001'});
  assert.equal(p.body.paymentType.id, '001'); assert.equal(p.body.paymentType.name, '001');
 });
+test('usa cliente, loja e tabela escolhidos no Bilhete em todos os pontos do payload', () => {
+ const clienteBilhete = { code: '000001', store: '01', pricelist: { id: '001', name: 'TABELA GERAL' } };
+ const vendaBilhete = { ...venda, cliente_codigo: '000001', cliente_loja: '01', tabela_preco: '001' };
+ const p = montarVenda4Sales(vendaBilhete, itens, vendedor, clienteBilhete, precos);
+ assert.equal(p.body.client.externalCode, '000001');
+ assert.equal(p.body.client.storeCode, '01');
+ assert.equal(p.body.priceTable.id, '001');
+ assert.equal(p.body.items[0].rangePrices[0].id, '001');
+});
+test('preserva os espaços da chave SA1 para clientes com código curto', () => {
+ const clienteCurto = { id: '010001  01', code: '0001', store: '01', pricelist: '001' };
+ const vendaCurta = { ...venda, cliente_codigo: '0001', cliente_loja: '01', tabela_preco: '001' };
+ const p = montarVenda4Sales(vendaCurta, itens, vendedor, clienteCurto, precos);
+ assert.equal(p.body.client.externalCode, '0001  ');
+ assert.equal(p.body.client._id, '010001  01');
+});
+test('envia o nome informado no cliente à vista para gravação em Z4_NOMCLI', () => {
+ const clienteCurto = { id: '010001  01', code: '0001', store: '01', name: 'A VISTA', pricelist: '001' };
+ const vendaCurta = { ...venda, cliente_codigo: '0001', cliente_loja: '01', cliente_nome: 'MARIA DA SILVA', tabela_preco: '001' };
+ const p = montarVenda4Sales(vendaCurta, itens, vendedor, clienteCurto, precos);
+ assert.equal(p.body.clientName, 'MARIA DA SILVA');
+ assert.equal(p.body.client.name, 'A VISTA');
+ assert.equal(p.body.client.shortName, undefined);
+});
+test('não sobrescreve o nome reduzido dos demais clientes', () => {
+ const p = montar({ ...venda, cliente_nome: 'NOME COMPLETO DO CADASTRO' });
+ assert.equal(p.body.clientName, undefined);
+ assert.equal(p.body.client.shortName, undefined);
+});
 test('usa a data de operação (data_local) no bilhete, não o dia real de criado_em, mantendo a hora real', () => {
  const p = montar({...venda, data_local: '2026-09-25'});
  assert.equal(p.body.date, '2026-09-25T12:00:00.000Z');
@@ -39,7 +68,7 @@ test('somente retorno EFE da mesma venda e empresa confirma inclusão; não repe
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({idWeb:'000037-0001-000163-20260922',company:'14',branch:'01',ticket:'TEST01',status:'EFE'}),{status:200});};
   assert.equal((await enviarVenda4Sales(montar())).sucesso,true);
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({idWeb:'645',company:'14',branch:'01',ticket:'TEST01',status:'EFE'}),{status:200});};
-  assert.equal((await enviarVenda4Sales(montar())).sucesso,false);
+  const rejeitado=await enviarVenda4Sales(montar()); assert.equal(rejeitado.sucesso,false);assert.equal(rejeitado.rejeitado,true);assert.equal(rejeitado.resultadoDesconhecido,false);
   globalThis.fetch=async()=>{calls++;throw new Error('timeout');};
   const r=await enviarVenda4Sales(montar()); assert.equal(r.resultadoDesconhecido,true);assert.equal(r.sucesso,false);assert.equal(calls,3);
  } finally {globalThis.fetch=original;if(user===undefined)delete process.env.PROTHEUS_REST_USER;else process.env.PROTHEUS_REST_USER=user;if(pass===undefined)delete process.env.PROTHEUS_REST_PASSWORD;else process.env.PROTHEUS_REST_PASSWORD=pass;}

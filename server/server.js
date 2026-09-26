@@ -6,8 +6,10 @@ import { syncUsuariosProtheus } from './sync-usuarios-protheus.js';
 import { syncVendedoresProtheus } from './sync-vendedores-protheus.js';
 import { iniciarApi } from './api.js';
 import { processarFilaProtheus } from './fila-protheus.js';
+import { sincronizarCacheBilhetes } from './sync-bilhetes-4sales.js';
 
 const CRON_EXPRESSAO = '*/15 * * * *';
+const CRON_EXPRESSAO_BILHETES = '*/5 * * * *';
 // Mais frequente que a sincronização de catálogo: uma venda parada na fila (sem internet no
 // momento da finalização) não pode esperar 15 minutos pra ser entregue ao Protheus.
 const CRON_EXPRESSAO_FILA_PROTHEUS = '*/2 * * * *';
@@ -68,6 +70,11 @@ setImmediate(async () => {
   } catch (erro) {
     console.error(`[server] Fila inicial em segundo plano falhou: ${erro?.message || erro}`);
   }
+  try {
+    await sincronizarCacheBilhetes();
+  } catch (erro) {
+    console.error(`[server] Cache 4Sales inicial falhou: ${erro?.message || erro}`);
+  }
 });
 
 cron.schedule(CRON_EXPRESSAO, () => {
@@ -76,6 +83,10 @@ cron.schedule(CRON_EXPRESSAO, () => {
 cron.schedule(CRON_EXPRESSAO_FILA_PROTHEUS, () => {
   processarFilaProtheus('agendada').catch((erro) => console.error(`[server] Fila agendada falhou: ${erro?.message || erro}`));
 });
+cron.schedule(CRON_EXPRESSAO_BILHETES, () => {
+  sincronizarCacheBilhetes().catch((erro) => console.error(`[server] Cache 4Sales falhou: ${erro?.message || erro}`));
+});
 
 console.log(`[server] Backend PDV rodando. Sincronização agendada a cada 15 minutos (${CRON_EXPRESSAO}).`);
 console.log(`[server] Fila de envio ao Protheus agendada a cada 2 minutos (${CRON_EXPRESSAO_FILA_PROTHEUS}).`);
+console.log(`[server] Cache do Bilhete/4Sales agendado a cada 5 minutos (${CRON_EXPRESSAO_BILHETES}).`);

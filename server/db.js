@@ -238,6 +238,25 @@ export function getDb() {
     garantirColuna(instancia, 'vendas', 'id_integracao', 'TEXT');
   });
 
+  aplicarMigracao(instancia, 3, 'Identificação de bilhetes e cliente Protheus escolhido', () => {
+    garantirColuna(instancia, 'vendas', 'tipo_operacao', "TEXT NOT NULL DEFAULT 'PDV'");
+    garantirColuna(instancia, 'vendas', 'cliente_codigo', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'cliente_loja', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'tabela_preco', 'TEXT');
+  });
+
+  aplicarMigracao(instancia, 4, 'Separar rejeição confirmada de resultado incerto no Protheus', () => {
+    // Versões anteriores classificavam toda resposta HTTP de erro como CONFERIR. Quando existe
+    // status HTTP e corpo de resposta gravados, o Protheus respondeu e rejeitou; não é timeout.
+    instancia.prepare(`
+      UPDATE vendas SET status_protheus = 'REJEITADO'
+      WHERE status_protheus = 'CONFERIR'
+        AND resultado_protheus LIKE '%"httpOk":false%'
+        AND resultado_protheus LIKE '%"status":%'
+        AND resultado_protheus LIKE '%"resposta":%'
+    `).run();
+  });
+
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
   // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.
   const vendasSemIdIntegracao = instancia.prepare(`

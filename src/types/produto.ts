@@ -8,6 +8,9 @@ export interface Produto {
   preco: number; // B1_PRCVEN
   codigoBarras: string; // B1_CODBAR
   grupo: string; // B1_GRUPO
+  saldoEstoque?: number | null; // saldo atual na filial 01 / armazém 01
+  estoqueReservado?: number | null;
+  estoqueAtualizadoEm?: string | null;
 }
 
 export interface ProdutoService {
