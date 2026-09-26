@@ -23,20 +23,21 @@ test('contrato 4Sales limita destino e encaminha somente body/cabecalhos permiti
       assert.deepEqual(JSON.parse(options.body), doc.body);
       assert.equal(options.headers.TenantId, '14,01');
       assert.equal(options.headers['x-erp-module'], 'FAT');
-      assert.notEqual(options.headers.Authorization, 'nao encaminhar');
+      assert.equal(options.headers.Authorization, 'Basic ' + Buffer.from('operador.protheus:senha-operador').toString('base64'));
       assert.equal(options.redirect, 'error');
       return new Response(JSON.stringify({ message: 'Operação inválida' }), { status: 500 });
     };
-    const erro = await enviarTeste4Sales(p);
+    const credenciaisProtheus = { usuario: 'operador.protheus', senha: 'senha-operador' };
+    const erro = await enviarTeste4Sales(p, { credenciaisProtheus });
     assert.equal(erro.status, 500);
     assert.equal(erro.resposta.message, 'Operação inválida');
     globalThis.fetch = async () => new Response(JSON.stringify({ pedido: '123' }), { status: 200 });
-    const ok = await enviarTeste4Sales(p);
+    const ok = await enviarTeste4Sales(p, { credenciaisProtheus });
     assert.equal(ok.httpOk, true);
     assert.equal(ok.sucesso, undefined); // HTTP 200 não comprova inclusão.
     let tentativas = 0;
     globalThis.fetch = async () => { tentativas++; throw new Error('timeout'); };
-    assert.equal((await enviarTeste4Sales(p)).resultadoDesconhecido, true);
+    assert.equal((await enviarTeste4Sales(p, { credenciaisProtheus })).resultadoDesconhecido, true);
     assert.equal(tentativas, 1);
   } finally {
     globalThis.fetch = originalFetch;

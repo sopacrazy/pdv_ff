@@ -49,14 +49,33 @@ async function rodarSync(origem) {
 }
 
 // Exportado pra quem embute este servidor (processo principal do Electron) saber exatamente quando
-// a porta já está escutando, sem precisar esperar a sincronização em segundo plano abaixo.
+// a porta já está escutando. Não pode existir top-level await de rede depois desta linha: o
+// import() do Electron só termina quando o módulo inteiro termina de avaliar e, sem VPN, ficaria
+// esperando os timeouts do SQL Server antes de conseguir abrir a janela local.
 export const servidorPronto = iniciarApi();
 
-await rodarSync('inicialização');
-await processarFilaProtheus('inicialização');
+// Agenda as tarefas remotas para o próximo ciclo do event loop. Assim o módulo termina de carregar,
+// o Electron recebe servidorPronto e abre o PDV usando somente o SQLite. Falha de VPN/rede mantém o
+// cache local intacto e nunca impede login ou venda offline.
+setImmediate(async () => {
+  try {
+    await rodarSync('inicialização em segundo plano');
+  } catch (erro) {
+    console.error(`[server] Sincronização inicial em segundo plano falhou: ${erro?.message || erro}`);
+  }
+  try {
+    await processarFilaProtheus('inicialização em segundo plano');
+  } catch (erro) {
+    console.error(`[server] Fila inicial em segundo plano falhou: ${erro?.message || erro}`);
+  }
+});
 
-cron.schedule(CRON_EXPRESSAO, () => rodarSync('agendada'));
-cron.schedule(CRON_EXPRESSAO_FILA_PROTHEUS, () => processarFilaProtheus('agendada'));
+cron.schedule(CRON_EXPRESSAO, () => {
+  rodarSync('agendada').catch((erro) => console.error(`[server] Sincronização agendada falhou: ${erro?.message || erro}`));
+});
+cron.schedule(CRON_EXPRESSAO_FILA_PROTHEUS, () => {
+  processarFilaProtheus('agendada').catch((erro) => console.error(`[server] Fila agendada falhou: ${erro?.message || erro}`));
+});
 
 console.log(`[server] Backend PDV rodando. Sincronização agendada a cada 15 minutos (${CRON_EXPRESSAO}).`);
 console.log(`[server] Fila de envio ao Protheus agendada a cada 2 minutos (${CRON_EXPRESSAO_FILA_PROTHEUS}).`);

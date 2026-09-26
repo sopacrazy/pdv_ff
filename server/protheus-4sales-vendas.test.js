@@ -1,16 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { montarVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
-const venda = { id: 'pdv-test-123', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z', data_local: '2026-09-22' };
+import { montarIdIntegracao } from './id-integracao.js';
+const venda = { id: 'pdv-test-123', numero_cupom: '37', caixa: '001', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z', data_local: '2026-09-22' };
 const itens = [{ codigo_produto: '199.029', descricao: 'MACA', quantidade: 2, valor_unitario: 16500, valor_total: 33000, desconto: 0 }];
-const vendedor = { protheus_vend_codigo: '000090' };
+const vendedor = { protheus_usr_id: '163', protheus_vend_codigo: '000090' };
 const cliente = { code: 'YDOVT3', store: '01', pricelist: '015' };
 const precos = [{ itemCode: '199.029 ', activeItemPrice: '1', minimumSalesPrice: 165 }];
 const montar = (v = venda, p = precos) => montarVenda4Sales(v, itens, vendedor, cliente, p);
 test('mapeia centavos e contexto autorizado sem reutilizar o bilhete 645', () => {
  const p = montar(); assert.equal(p.body.value, 330); assert.equal(p.body.items[0].price,165);
- assert.equal(p.body._id,venda.id); assert.equal(p.body.client.externalCode,'YDOVT3');
+ assert.equal(p.body._id,'000037-0001-000163-20260922'); assert.equal(p.body.client.externalCode,'YDOVT3');
  assert.equal(p.body.priceTable.id,'015'); assert.equal(p.body.paymentType.id,'033'); assert.equal(p.headers.TenantId,'14,01');
+});
+test('preserva o identificador de uma tentativa anterior para o reenvio ser idempotente', () => {
+ assert.equal(montarIdIntegracao({ ...venda, id_integracao: 'uuid-anterior' }, vendedor.protheus_usr_id), 'uuid-anterior');
 });
 test('usa a condição de pagamento do cadastro do cliente como paymentType, sem exigir PIX', () => {
  const p = montar({...venda, forma_pagamento: '001'});
@@ -32,7 +36,7 @@ test('somente retorno EFE da mesma venda e empresa confirma inclusão; não repe
  process.env.PROTHEUS_REST_USER='test'; process.env.PROTHEUS_REST_PASSWORD='test';
  let calls=0;
  try {
-  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({idWeb:venda.id,company:'14',branch:'01',ticket:'TEST01',status:'EFE'}),{status:200});};
+  globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({idWeb:'000037-0001-000163-20260922',company:'14',branch:'01',ticket:'TEST01',status:'EFE'}),{status:200});};
   assert.equal((await enviarVenda4Sales(montar())).sucesso,true);
   globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify({idWeb:'645',company:'14',branch:'01',ticket:'TEST01',status:'EFE'}),{status:200});};
   assert.equal((await enviarVenda4Sales(montar())).sucesso,false);

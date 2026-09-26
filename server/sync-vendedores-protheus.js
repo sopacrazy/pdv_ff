@@ -8,7 +8,8 @@ const QUERY = `
 SELECT
     RTRIM(A3_FILIAL) AS filial,
     RTRIM(A3_COD)    AS codigo,
-    RTRIM(A3_NOME)   AS nome
+    RTRIM(A3_NOME)   AS nome,
+    RTRIM(A3_CODUSR) AS usuario_codigo
 FROM SA3140
 WHERE D_E_L_E_T_ = ''
 `;
@@ -23,10 +24,11 @@ export async function syncVendedoresProtheus() {
 
     const db = getDb();
     const upsert = db.prepare(`
-      INSERT INTO protheus_vendedores (filial, codigo, nome, atualizado_em)
-      VALUES (@filial, @codigo, @nome, @atualizado_em)
+      INSERT INTO protheus_vendedores (filial, codigo, nome, usuario_codigo, atualizado_em)
+      VALUES (@filial, @codigo, @nome, @usuario_codigo, @atualizado_em)
       ON CONFLICT(filial, codigo) DO UPDATE SET
         nome = excluded.nome,
+        usuario_codigo = excluded.usuario_codigo,
         atualizado_em = excluded.atualizado_em
     `);
 
@@ -38,6 +40,7 @@ export async function syncVendedoresProtheus() {
           filial: vendedor.filial,
           codigo: vendedor.codigo,
           nome: vendedor.nome,
+          usuario_codigo: vendedor.usuario_codigo || null,
           atualizado_em: agora,
         });
       }

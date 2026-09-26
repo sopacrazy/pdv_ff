@@ -4,7 +4,6 @@ export interface VendaParaSalvar {
   numeroCupom: string;
   loja: string;
   caixa: string;
-  operador: string;
   cliente: { nome: string; cpf: string } | null;
   itens: ItemVenda[];
   subtotal: number;
@@ -63,11 +62,11 @@ export interface ResultadoEnvioProtheus {
 export const vendaService = {
   // O número do cupom é decidido pelo servidor (contador atômico na mesma transação do insert) —
   // o que a tela manda em `venda.numeroCupom` é só um preview, nunca é o valor realmente gravado.
-  registrarVenda: async (venda: VendaParaSalvar): Promise<{ sucesso: boolean; id?: string; numeroCupom?: string; erro?: string }> => {
+  registrarVenda: async (venda: VendaParaSalvar, token: string): Promise<{ sucesso: boolean; id?: string; numeroCupom?: string; erro?: string }> => {
     try {
       const resp = await fetch('/api/vendas', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(venda),
       });
       if (!resp.ok) {

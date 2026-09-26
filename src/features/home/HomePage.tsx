@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { Wallet, Receipt } from 'lucide-react';
 import { AppShell } from '../../components/AppShell';
 import { useAuthStore } from '../../store/authStore';
+import { rotuloFilial } from '../../utils/filiais';
 import { formatMoney } from '../../utils/formatters';
 import { vendaService, VendaResumo } from '../../services/vendaService';
 import {
@@ -164,7 +165,7 @@ export function HomePage() {
           {saudacao(horaCorrente)}, {(vendedor?.nome || 'Operador').split(' ')[0]}
         </h1>
         <p className="text-sm text-slate-400 capitalize truncate">
-          {formatadorData.format(horaAtual)} · Loja {loja} · Caixa {caixa}
+          {formatadorData.format(horaAtual)} · Loja {rotuloFilial(loja)} · Caixa {caixa}
         </p>
       </header>
 

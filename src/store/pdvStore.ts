@@ -197,7 +197,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
 
   finalizarVenda: async (pagamentos) => {
     const { cupomNumero, itens, cliente, clientePadrao } = get();
-    const { loja, caixa, vendedor } = useAuthStore.getState();
+    const { loja, caixa, token } = useAuthStore.getState();
 
     const subtotal = itens.reduce((acc, i) => acc + i.quantidade * i.valorUnitario, 0);
     const desconto = itens.reduce((acc, i) => acc + i.desconto, 0);
@@ -207,7 +207,6 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       numeroCupom: cupomNumero,
       loja,
       caixa,
-      operador: vendedor?.nome || '',
       cliente: cliente || clientePadrao,
       itens,
       subtotal,
@@ -218,7 +217,8 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       troco: pagamentos[0]?.troco,
     };
 
-    const resultado = await vendaService.registrarVenda(payload);
+    if (!token) return { sucesso: false, erro: 'Sessão expirada. Entre novamente antes de finalizar a venda.' };
+    const resultado = await vendaService.registrarVenda(payload, token);
     if (!resultado.sucesso) {
       return resultado;
     }
@@ -229,8 +229,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
     // Se não houver internet agora, a venda fica salva com status 'LOCAL' e a fila do servidor
     // (processarFilaProtheus) entrega sozinha assim que a conexão voltar — nada a fazer aqui.
     if (idDaVenda) {
-      const { token } = useAuthStore.getState();
-      if (token) vendaService.enviarProtheus(idDaVenda, token, { rapido: true });
+      vendaService.enviarProtheus(idDaVenda, token, { rapido: true });
     }
 
     set({ itens: [], itemSelecionadoId: null, cliente: null, modalAtivo: 'NENHUM' });

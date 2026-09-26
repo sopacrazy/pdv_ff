@@ -13,9 +13,11 @@ interface AuthStore {
   loja: string;
   caixa: string;
 
-  login: (login: string, senha: string) => Promise<{ sucesso: boolean; erro?: string }>;
+  login: (login: string, senha: string) => Promise<{ sucesso: boolean; prontoParaVender?: boolean; erro?: string }>;
   logout: () => Promise<void>;
   restaurarSessao: () => Promise<void>;
+  definirConfiguracao: (loja: string, caixa: string) => void;
+  atualizarUsuario: (usuario: Usuario) => void;
 }
 
 function derivarVendedor(usuario: Usuario | null) {
@@ -44,8 +46,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       token: resultado.token,
       isAuthenticated: true,
       vendedor: derivarVendedor(resultado.usuario),
+      loja: resultado.configuracao?.filial || '01',
+      caixa: resultado.configuracao?.caixa || '001',
     });
-    return { sucesso: true };
+    return { sucesso: true, prontoParaVender: resultado.usuario.prontoParaVender };
   },
 
   logout: async () => {
@@ -61,18 +65,23 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({ restaurando: false });
       return;
     }
-    const usuario = await usuarioService.me(token);
-    if (!usuario) {
+    const sessao = await usuarioService.me(token);
+    if (!sessao) {
       localStorage.removeItem('@pdv:token');
       set({ restaurando: false });
       return;
     }
     set({
-      usuario,
+      usuario: sessao.usuario,
       token,
       isAuthenticated: true,
-      vendedor: derivarVendedor(usuario),
+      vendedor: derivarVendedor(sessao.usuario),
+      loja: sessao.configuracao?.filial || '01',
+      caixa: sessao.configuracao?.caixa || '001',
       restaurando: false,
     });
   },
+
+  definirConfiguracao: (loja, caixa) => set({ loja, caixa }),
+  atualizarUsuario: (usuario) => set({ usuario, vendedor: derivarVendedor(usuario) }),
 }));

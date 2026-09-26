@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { LayoutDashboard, MonitorPlay, Search, Ticket, ShieldCheck, LogOut, RefreshCw, WifiOff } from 'lucide-react';
+import { LayoutDashboard, MonitorPlay, Search, Ticket, ShieldCheck, LogOut, RefreshCw, WifiOff, UserRound } from 'lucide-react';
 import fortfruitLogo from '@/fortfruit-logo.png';
 import { useAuthStore } from '../store/authStore';
 import { useStatusConexao } from '../hooks/useStatusConexao';
@@ -27,9 +27,16 @@ export function AppShell({ children, rotaAtiva, className }: AppShellProps) {
 
   const itensMenu = [
     { rotulo: 'Início', icone: LayoutDashboard, rota: '/home' },
-    { rotulo: 'PDV', icone: MonitorPlay, rota: '/pdv' },
+    {
+      rotulo: 'PDV',
+      icone: MonitorPlay,
+      rota: '/pdv',
+      desativado: !usuario?.prontoParaVender,
+      titulo: 'Configure e valide sua conta Protheus em Minha conta',
+    },
     { rotulo: 'Consultas', icone: Search, rota: '/consultas' },
     { rotulo: 'Bilhete', icone: Ticket, rota: '/bilhetes', desativado: true },
+    { rotulo: 'Minha conta', icone: UserRound, rota: '/minha-conta' },
     ...(usuario?.papel === 'ADMIN' ? [{ rotulo: 'Administrador', icone: ShieldCheck, rota: '/admin' }] : []),
   ];
 
@@ -60,7 +67,7 @@ export function AppShell({ children, rotaAtiva, className }: AppShellProps) {
                   return (
                     <div
                       key={item.rota}
-                      title="Em breve"
+                      title={item.titulo || 'Em breve'}
                       className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm text-slate-600 opacity-50 cursor-not-allowed"
                     >
                       <Icone size={18} />

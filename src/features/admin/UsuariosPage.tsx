@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { ArrowLeft, Plus, X, ShieldCheck, User as UserIcon, Power } from 'lucide-react';
+import { ArrowLeft, Plus, X, ShieldCheck, User as UserIcon, Power, Trash2 } from 'lucide-react';
 import { AppShell } from '../../components/AppShell';
 import { useAuthStore } from '../../store/authStore';
 import { useToastStore } from '../../store/toastStore';
@@ -19,8 +19,11 @@ interface FormularioUsuario {
   senha: string;
   papel: Papel;
   protheusCodigo: string;
+  protheusNome: string;
+  protheusSenha: string;
   protheusVendFilial: string;
   protheusVendCodigo: string;
+  protheusVendNome: string;
 }
 
 const FORM_VAZIO: FormularioUsuario = {
@@ -29,8 +32,11 @@ const FORM_VAZIO: FormularioUsuario = {
   senha: '',
   papel: 'OPERADOR',
   protheusCodigo: '',
+  protheusNome: '',
+  protheusSenha: '',
   protheusVendFilial: '',
   protheusVendCodigo: '',
+  protheusVendNome: '',
 };
 
 export function UsuariosPage() {
@@ -44,7 +50,9 @@ export function UsuariosPage() {
   const [usuarioEmEdicao, setUsuarioEmEdicao] = useState<Usuario | null>(null);
   const [form, setForm] = useState<FormularioUsuario>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [consultandoVinculo, setConsultandoVinculo] = useState(false);
   const [usuarioParaAlternar, setUsuarioParaAlternar] = useState<Usuario | null>(null);
+  const [usuarioParaExcluir, setUsuarioParaExcluir] = useState<Usuario | null>(null);
   const [usuariosProtheus, setUsuariosProtheus] = useState<UsuarioProtheus[]>([]);
   const [carregandoProtheus, setCarregandoProtheus] = useState(false);
   const [erroProtheus, setErroProtheus] = useState(false);
@@ -81,7 +89,12 @@ export function UsuariosPage() {
   const [vendedorIndex, setVendedorIndex] = useState(0);
   const listaVendedorRef = useRef<HTMLDivElement>(null);
 
-  const vendedoresDisponiveis = form.protheusVendFilial ? vendedoresPorFilial[form.protheusVendFilial] || [] : [];
+  // USR_CODIGO é o login do Basic Auth, mas A3_CODUSR aponta para o USR_ID interno. RFATA03
+  // procura a SA3 por esse ID; por isso a lista só mostra o vínculo real do Protheus.
+  const idUsuarioProtheusSelecionado = usuariosProtheus.find((u) => u.codigo === form.protheusCodigo)?.idProtheus;
+  const vendedoresDisponiveis = form.protheusVendFilial && form.protheusCodigo
+    ? (vendedoresPorFilial[form.protheusVendFilial] || []).filter((v) => v.usuarioCodigo === idUsuarioProtheusSelecionado)
+    : [];
   const termoVendedor = buscaVendedor.trim().toLowerCase();
   const sugestoesVendedor = vendedoresDisponiveis
     .filter(
@@ -161,8 +174,11 @@ export function UsuariosPage() {
       senha: '',
       papel: usuario.papel,
       protheusCodigo: usuario.protheusCodigo || '',
+      protheusNome: usuario.protheusNome || '',
+      protheusSenha: '',
       protheusVendFilial: usuario.protheusVendFilial || '',
       protheusVendCodigo: usuario.protheusVendCodigo || '',
+      protheusVendNome: usuario.protheusVendNome || '',
     });
     setBuscaProtheus(usuario.protheusNome ? `${usuario.protheusNome} (${usuario.protheusCodigo})` : '');
     setBuscaVendedor(usuario.protheusVendNome ? `${usuario.protheusVendNome} (${usuario.protheusVendCodigo})` : '');
@@ -174,19 +190,19 @@ export function UsuariosPage() {
   };
 
   const selecionarFilial = (filial: string) => {
-    setForm((f) => ({ ...f, protheusVendFilial: filial, protheusVendCodigo: '' }));
+    setForm((f) => ({ ...f, protheusVendFilial: filial, protheusVendCodigo: '', protheusVendNome: '' }));
     setBuscaVendedor('');
     if (filial) carregarVendedores(filial);
   };
 
   const selecionarVendedor = (v: VendedorProtheus) => {
-    setForm((f) => ({ ...f, protheusVendCodigo: v.codigo }));
+    setForm((f) => ({ ...f, protheusVendCodigo: v.codigo, protheusVendNome: v.nome }));
     setBuscaVendedor(`${v.nome} (${v.codigo})`);
     setVendedorAberto(false);
   };
 
   const limparVendedor = () => {
-    setForm((f) => ({ ...f, protheusVendCodigo: '' }));
+    setForm((f) => ({ ...f, protheusVendCodigo: '', protheusVendNome: '' }));
     setBuscaVendedor('');
   };
 
@@ -208,14 +224,54 @@ export function UsuariosPage() {
   };
 
   const selecionarProtheus = (u: UsuarioProtheus) => {
-    setForm((f) => ({ ...f, protheusCodigo: u.codigo }));
+    setForm((f) => ({
+      ...f,
+      protheusCodigo: u.codigo,
+      protheusNome: u.nome,
+      protheusVendCodigo: '',
+      protheusVendNome: '',
+    }));
     setBuscaProtheus(`${u.nome} (${u.codigo})`);
+    setBuscaVendedor('');
     setProtheusAberto(false);
   };
 
   const limparProtheus = () => {
-    setForm((f) => ({ ...f, protheusCodigo: '' }));
+    setForm((f) => ({ ...f, protheusCodigo: '', protheusNome: '', protheusVendCodigo: '', protheusVendNome: '' }));
     setBuscaProtheus('');
+    setBuscaVendedor('');
+  };
+
+  const consultarVinculoProtheus = async () => {
+    if (!token || !form.protheusCodigo) {
+      mostrarToast('Selecione primeiro o usuário Protheus', 'erro');
+      return;
+    }
+    if (!form.protheusSenha && !(modal === 'EDITAR' && usuarioEmEdicao?.protheusSenhaDefinida)) {
+      mostrarToast('Informe a senha REST do usuário Protheus', 'erro');
+      return;
+    }
+    setConsultandoVinculo(true);
+    const resultado = await usuarioService.consultarVendedorDoUsuario(token, {
+      protheusCodigo: form.protheusCodigo,
+      protheusSenha: form.protheusSenha || undefined,
+      usuarioPdvId: usuarioEmEdicao?.id,
+    });
+    setConsultandoVinculo(false);
+    if (!resultado.sucesso || !resultado.vendedor) {
+      mostrarToast(resultado.erro || 'Vendedor não encontrado no Protheus', 'erro');
+      return;
+    }
+    const vendedor = resultado.vendedor;
+    setForm((atual) => ({
+      ...atual,
+      protheusVendFilial: vendedor.filial,
+      protheusVendCodigo: vendedor.codigo,
+      protheusVendNome: vendedor.nome,
+    }));
+    setBuscaVendedor(`${vendedor.nome} (${vendedor.codigo})`);
+    mostrarToast(`Vínculo confirmado: ${vendedor.codigo} — ${vendedor.nome}`, 'sucesso');
+    carregarVendedores(vendedor.filial);
   };
 
   const handleProtheusKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -249,10 +305,11 @@ export function UsuariosPage() {
       mostrarToast('A senha precisa ter pelo menos 6 caracteres', 'erro');
       return;
     }
-
-    const protheusSelecionado = usuariosProtheus.find((u) => u.codigo === form.protheusCodigo);
-    const vendedorSelecionado = vendedoresDisponiveis.find((v) => v.codigo === form.protheusVendCodigo);
-
+    const temVinculoParcial = !!(form.protheusCodigo || form.protheusVendFilial || form.protheusVendCodigo || form.protheusSenha);
+    if (temVinculoParcial && (!form.protheusCodigo || !form.protheusVendFilial || !form.protheusVendCodigo)) {
+      mostrarToast('Selecione usuário Protheus, filial e o vendedor vinculado', 'erro');
+      return;
+    }
     setSalvando(true);
     const resultado =
       modal === 'CRIAR'
@@ -261,21 +318,23 @@ export function UsuariosPage() {
             login: form.login,
             senha: form.senha,
             papel: form.papel,
-            protheusCodigo: protheusSelecionado?.codigo || null,
-            protheusNome: protheusSelecionado?.nome || null,
+            protheusCodigo: form.protheusCodigo || null,
+            protheusNome: form.protheusNome || null,
+            protheusSenha: form.protheusSenha || undefined,
             protheusVendFilial: form.protheusVendFilial || null,
-            protheusVendCodigo: vendedorSelecionado?.codigo || null,
-            protheusVendNome: vendedorSelecionado?.nome || null,
+            protheusVendCodigo: form.protheusVendCodigo || null,
+            protheusVendNome: form.protheusVendNome || null,
           })
         : await usuarioService.atualizar(token, usuarioEmEdicao!.id, {
             nome: form.nome,
             papel: form.papel,
             senha: form.senha || undefined,
-            protheusCodigo: protheusSelecionado?.codigo || null,
-            protheusNome: protheusSelecionado?.nome || null,
+            protheusCodigo: form.protheusCodigo || null,
+            protheusNome: form.protheusNome || null,
+            protheusSenha: form.protheusSenha || undefined,
             protheusVendFilial: form.protheusVendFilial || null,
-            protheusVendCodigo: vendedorSelecionado?.codigo || null,
-            protheusVendNome: vendedorSelecionado?.nome || null,
+            protheusVendCodigo: form.protheusVendCodigo || null,
+            protheusVendNome: form.protheusVendNome || null,
           });
     setSalvando(false);
 
@@ -299,6 +358,18 @@ export function UsuariosPage() {
       carregar();
     } else {
       mostrarToast(resultado.erro || 'Falha ao atualizar usuário', 'erro');
+    }
+  };
+
+  const confirmarExclusao = async () => {
+    if (!token || !usuarioParaExcluir) return;
+    const resultado = await usuarioService.excluir(token, usuarioParaExcluir.id);
+    setUsuarioParaExcluir(null);
+    if (resultado.sucesso) {
+      mostrarToast('Usuário excluído', 'sucesso');
+      carregar();
+    } else {
+      mostrarToast(resultado.erro || 'Falha ao excluir usuário', 'erro');
     }
   };
 
@@ -359,12 +430,22 @@ export function UsuariosPage() {
                     </td>
                     <td className="p-4 text-slate-500 text-sm">
                       {u.protheusVendNome ? (
-                        <span>
-                          {u.protheusVendNome}{' '}
-                          <span className="text-slate-400 font-mono text-xs">
-                            (Fil. {u.protheusVendFilial} / {u.protheusVendCodigo})
+                        <div className="flex flex-col items-start gap-1">
+                          <span>
+                            {u.protheusVendNome}{' '}
+                            <span className="text-slate-400 font-mono text-xs">
+                              (Fil. {u.protheusVendFilial} / {u.protheusVendCodigo})
+                            </span>
                           </span>
-                        </span>
+                          <span className={clsx(
+                            'text-[10px] uppercase font-bold px-2 py-0.5 rounded-full',
+                            u.prontoParaVender
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                          )}>
+                            {u.prontoParaVender ? 'Pronto para vender' : 'Configuração pendente'}
+                          </span>
+                        </div>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
@@ -405,6 +486,15 @@ export function UsuariosPage() {
                           className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 disabled:hover:bg-transparent"
                         >
                           <Power size={16} />
+                        </button>
+                        <button
+                          onClick={() => setUsuarioParaExcluir(u)}
+                          disabled={u.id === usuarioLogado?.id}
+                          title={u.id === usuarioLogado?.id ? 'Você não pode excluir seu próprio usuário' : 'Excluir usuário'}
+                          aria-label={`Excluir usuário ${u.nome}`}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-700 hover:bg-red-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                        >
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
@@ -478,15 +568,22 @@ export function UsuariosPage() {
 
               <div className="sm:col-span-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                  Usuário Protheus (SYS_USR) <span className="normal-case font-normal">(opcional)</span>
+                  Usuário Protheus (SYS_USR) <span className="normal-case font-normal">(obrigatório para enviar)</span>
                 </label>
                 <div className="relative mt-1">
                   <input
                     type="text"
-                    value={buscaProtheus}
-                    onChange={(e) => {
-                      setBuscaProtheus(e.target.value);
-                      setForm((f) => ({ ...f, protheusCodigo: '' }));
+                      value={buscaProtheus}
+                      onChange={(e) => {
+                        setBuscaProtheus(e.target.value);
+                        setBuscaVendedor('');
+                        setForm((f) => ({
+                          ...f,
+                          protheusCodigo: '',
+                          protheusNome: '',
+                          protheusVendCodigo: '',
+                          protheusVendNome: '',
+                        }));
                       setProtheusAberto(true);
                     }}
                     onFocus={(e) => {
@@ -555,7 +652,37 @@ export function UsuariosPage() {
 
               <div className="sm:col-span-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                  Vendedor (SA3) <span className="normal-case font-normal">(opcional)</span>
+                  Senha Protheus (REST) — opcional para o administrador{' '}
+                  <span className="normal-case font-normal">
+                    {modal === 'EDITAR' && '(deixe em branco para manter)'}
+                  </span>
+                </label>
+                <input
+                  type="password"
+                  value={form.protheusSenha}
+                  onChange={(e) => setForm({ ...form, protheusSenha: e.target.value })}
+                  placeholder={
+                    modal === 'EDITAR' && usuarioEmEdicao?.protheusSenhaDefinida ? 'Senha configurada' : 'Senha do login Protheus acima'
+                  }
+                  className={inputCls}
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  O próprio usuário poderá cadastrar e validar esta senha em Minha conta. Sem uma senha validada,
+                  o PDV ficará bloqueado para vendas, mas o usuário conseguirá entrar no sistema.
+                </p>
+                <button
+                  type="button"
+                  onClick={consultarVinculoProtheus}
+                  disabled={consultandoVinculo || !form.protheusCodigo}
+                  className="mt-3 w-full py-2.5 rounded-xl border-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-sm transition-colors disabled:opacity-50"
+                >
+                  {consultandoVinculo ? 'Consultando o Protheus...' : 'Localizar vendedor vinculado no Protheus'}
+                </button>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+                  Vendedor vinculado (SA3) <span className="normal-case font-normal">(A3_CODUSR)</span>
                 </label>
                 <div className="grid grid-cols-[auto_1fr] gap-2 mt-1">
                   <select
@@ -577,7 +704,7 @@ export function UsuariosPage() {
                       value={buscaVendedor}
                       onChange={(e) => {
                         setBuscaVendedor(e.target.value);
-                        setForm((f) => ({ ...f, protheusVendCodigo: '' }));
+                        setForm((f) => ({ ...f, protheusVendCodigo: '', protheusVendNome: '' }));
                         setVendedorAberto(true);
                       }}
                       onFocus={(e) => {
@@ -586,8 +713,8 @@ export function UsuariosPage() {
                       }}
                       onBlur={() => setTimeout(() => setVendedorAberto(false), 120)}
                       onKeyDown={handleVendedorKeyDown}
-                      disabled={!form.protheusVendFilial || carregandoVendedores}
-                      placeholder={form.protheusVendFilial ? 'Digite o nome ou código...' : 'Selecione a filial'}
+                      disabled={!form.protheusVendFilial || !form.protheusCodigo || carregandoVendedores}
+                      placeholder={!form.protheusCodigo ? 'Selecione o usuário Protheus' : form.protheusVendFilial ? 'Digite o nome ou código...' : 'Selecione a filial'}
                       autoComplete="off"
                       className={clsx(inputCls, 'mt-0 pr-8')}
                     />
@@ -610,7 +737,9 @@ export function UsuariosPage() {
                         className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-20 max-h-56 overflow-auto"
                       >
                         {sugestoesVendedor.length === 0 ? (
-                          <div className="px-4 py-3 text-slate-400 text-sm">Nenhum vendedor encontrado.</div>
+                          <div className="px-4 py-3 text-slate-400 text-sm">
+                            Nenhum vendedor desta filial está vinculado ao usuário selecionado.
+                          </div>
                         ) : (
                           sugestoesVendedor.map((v, idx) => (
                             <button
@@ -677,6 +806,17 @@ export function UsuariosPage() {
           confirmarLabel={usuarioParaAlternar.ativo ? 'DESATIVAR (ENTER)' : 'REATIVAR (ENTER)'}
           onConfirmar={confirmarAlternarStatus}
           onCancelar={() => setUsuarioParaAlternar(null)}
+        />
+      )}
+
+      {usuarioParaExcluir && (
+        <ConfirmDialog
+          titulo="Excluir Usuário"
+          mensagem={`Confirma excluir definitivamente "${usuarioParaExcluir.nome}"? Se houver vendas vinculadas, a exclusão será bloqueada e o usuário deverá ser apenas desativado.`}
+          variante="perigo"
+          confirmarLabel="EXCLUIR (ENTER)"
+          onConfirmar={confirmarExclusao}
+          onCancelar={() => setUsuarioParaExcluir(null)}
         />
       )}
     </AppShell>

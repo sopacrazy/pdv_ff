@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { rotuloFilial } from '../../utils/filiais';
 import { usePdvStore } from '../../store/pdvStore';
 import { useToastStore } from '../../store/toastStore';
 import { useAtalhos } from '../../hooks/useAtalhos';
@@ -179,7 +180,7 @@ export const PdvPage = () => {
       <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20 shadow-sm">
         <div>
           <div className="font-bold text-lg text-slate-500 tracking-wider">
-            CAIXA <span className="text-slate-800">{caixa}</span> &middot; LOJA <span className="text-slate-800">{loja}</span>
+            CAIXA <span className="text-slate-800">{caixa}</span> &middot; LOJA <span className="text-slate-800">{rotuloFilial(loja)}</span>
           </div>
           <button
             onClick={() => setModalDataOperacaoAberto(true)}

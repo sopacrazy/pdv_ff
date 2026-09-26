@@ -1,6 +1,8 @@
 import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES } from './protheus-4sales-test.js';
+import { montarIdIntegracao } from './id-integracao.js';
 
 const tenant = '14,01';
+
 async function consultar(path, timeoutMs = 30000) {
   const { PROTHEUS_REST_USER: user, PROTHEUS_REST_PASSWORD: password } = process.env;
   if (!user || !password) throw new Error('Configure as credenciais REST no servidor.');
@@ -48,8 +50,9 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
   // documentar a intenção, caso o comportamento do 4Sales mude no futuro.
   const horaReal = new Date(venda.criado_em).toISOString().split('T')[1];
   const dataBilhete = `${venda.data_local}T${horaReal}`;
+  const idIntegracao = montarIdIntegracao(venda, vendedor?.protheus_usr_id);
   return prepararTeste4Sales({ url: URL_TESTE_4SALES, method: 'post', headers: { TenantId: tenant, 'x-erp-module': 'FAT' }, body: {
-    _id: venda.id, date: dataBilhete, operation: { id: '2', name: 'Bilhete' },
+    _id: idIntegracao, date: dataBilhete, operation: { id: '2', name: 'Bilhete' },
     subsidiary: { id: tenant, name: 'Operacao', companyName: 'FORT FRUIT LTDA' },
     client: { _id: 'YDOVT301', externalCode: 'YDOVT3', storeCode: '01', name: cliente.name || cliente.fantasy, priceTable, paymentType, paymentMethods, paymentForm: 'DEP', seller },
     seller, priceTable, paymentType, paymentMethods, items,

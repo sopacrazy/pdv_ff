@@ -232,10 +232,8 @@ function montarMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// Abrir o app envolve subir o servidor embutido + sincronizar com o Protheus antes de ter algo pra
-// mostrar — alguns segundos em que a tela ficaria totalmente em branco. Essa janela pequena aparece
-// na hora do clique (sem esperar nada) só pra dar feedback de que o app já está abrindo, e evita o
-// usuário clicar várias vezes achando que não funcionou.
+// Abrir o app envolve subir apenas o servidor local (Express + SQLite). As sincronizações remotas
+// começam depois, em segundo plano, então a splash não fica presa aguardando VPN/SQL Server.
 function abrirSplash() {
   janelaSplash = new BrowserWindow({
     width: 340,
@@ -332,9 +330,8 @@ app.whenReady().then(async () => {
   // sentido pro operador de caixa) por um menu mínimo só com "Ajuda" (verificar atualização, sobre).
   montarMenu();
 
-  // Sobe o servidor embutido (Express + SQLite) antes de abrir a janela. server/server.js é ESM
-  // e faz sync com o Protheus + agenda os crons assim que é importado — a janela só espera o
-  // servidor HTTP estar de fato escutando (servidorPronto), não a sincronização em segundo plano.
+  // Sobe o servidor embutido (Express + SQLite) antes de abrir a janela. server/server.js termina
+  // o import sem aguardar qualquer rede; a janela espera somente a porta local estar escutando.
   const servidorUrl = require('node:url').pathToFileURL(path.join(__dirname, '..', 'server', 'server.js')).href;
   try {
     const { servidorPronto } = await import(servidorUrl);

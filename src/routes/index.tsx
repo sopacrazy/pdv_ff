@@ -7,6 +7,8 @@ import { BilhetesPage } from '../features/bilhetes/BilhetesPage';
 import { BilheteFormPage } from '../features/bilhetes/BilheteFormPage';
 import { AdminPage } from '../features/admin/AdminPage';
 import { UsuariosPage } from '../features/admin/UsuariosPage';
+import { ConfiguracoesPage } from '../features/admin/ConfiguracoesPage';
+import { MinhaContaPage } from '../features/conta/MinhaContaPage';
 import { useAuthStore } from '../store/authStore';
 
 // Guarda de Rota
@@ -26,6 +28,14 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const PdvRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, restaurando, usuario } = useAuthStore();
+  if (restaurando) return null;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!usuario?.prontoParaVender) return <Navigate to="/minha-conta" replace />;
+  return <>{children}</>;
+};
+
 export function AppRoutes() {
   return (
     <BrowserRouter>
@@ -42,9 +52,9 @@ export function AppRoutes() {
         <Route
           path="/pdv"
           element={
-            <PrivateRoute>
+            <PdvRoute>
               <PdvPage />
-            </PrivateRoute>
+            </PdvRoute>
           }
         />
         <Route
@@ -80,6 +90,14 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="/minha-conta"
+          element={
+            <PrivateRoute>
+              <MinhaContaPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/admin"
           element={
             <AdminRoute>
@@ -92,6 +110,14 @@ export function AppRoutes() {
           element={
             <AdminRoute>
               <UsuariosPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/configuracoes"
+          element={
+            <AdminRoute>
+              <ConfiguracoesPage />
             </AdminRoute>
           }
         />

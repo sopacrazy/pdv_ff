@@ -28,7 +28,7 @@ export function LoginPage() {
     const resultado = await login(loginInput.trim(), senha);
     setCarregando(false);
     if (resultado.sucesso) {
-      navigate('/home');
+      navigate(resultado.prontoParaVender ? '/home' : '/minha-conta');
     } else {
       setErro(resultado.erro || 'Não foi possível entrar.');
     }

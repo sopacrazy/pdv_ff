@@ -1,11 +1,11 @@
-import { Usuario, UsuarioProtheus, VendedorProtheus } from '../types/usuario';
+import { ConfiguracaoSistema, Usuario, UsuarioProtheus, VendedorProtheus } from '../types/usuario';
 
 function headersComToken(token: string | null): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export const usuarioService = {
-  login: async (login: string, senha: string): Promise<{ sucesso: boolean; token?: string; usuario?: Usuario; erro?: string }> => {
+  login: async (login: string, senha: string): Promise<{ sucesso: boolean; token?: string; usuario?: Usuario; configuracao?: ConfiguracaoSistema; erro?: string }> => {
     try {
       const resp = await fetch('/api/auth/login', {
         method: 'POST',
@@ -16,7 +16,7 @@ export const usuarioService = {
       if (!resp.ok) {
         return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
       }
-      return { sucesso: true, token: corpo.token, usuario: corpo.usuario };
+      return { sucesso: true, token: corpo.token, usuario: corpo.usuario, configuracao: corpo.configuracao };
     } catch (erro) {
       return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
     }
@@ -30,12 +30,12 @@ export const usuarioService = {
     }
   },
 
-  me: async (token: string): Promise<Usuario | null> => {
+  me: async (token: string): Promise<{ usuario: Usuario; configuracao: ConfiguracaoSistema } | null> => {
     try {
       const resp = await fetch('/api/auth/me', { headers: headersComToken(token) });
       if (!resp.ok) return null;
       const corpo = await resp.json();
-      return corpo.usuario;
+      return { usuario: corpo.usuario, configuracao: corpo.configuracao };
     } catch {
       return null;
     }
@@ -59,12 +59,71 @@ export const usuarioService = {
     return resp.json();
   },
 
-  listarVendedores: async (token: string, filial: string): Promise<VendedorProtheus[]> => {
-    const resp = await fetch(`/api/protheus/vendedores?filial=${encodeURIComponent(filial)}`, {
+  listarVendedores: async (token: string, filial: string, usuarioCodigo?: string): Promise<VendedorProtheus[]> => {
+    const query = new URLSearchParams({ filial });
+    if (usuarioCodigo) query.set('usuarioCodigo', usuarioCodigo);
+    const resp = await fetch(`/api/protheus/vendedores?${query.toString()}`, {
       headers: headersComToken(token),
     });
     if (!resp.ok) return [];
     return resp.json();
+  },
+
+  consultarVendedorDoUsuario: async (
+    token: string,
+    dados: { protheusCodigo: string; protheusSenha?: string; usuarioPdvId?: string }
+  ): Promise<{ sucesso: boolean; vendedor?: { filial: string; codigo: string; nome: string; usuarioId: string }; erro?: string }> => {
+    try {
+      const resp = await fetch('/api/protheus/vendedor-do-usuario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headersComToken(token) },
+        body: JSON.stringify(dados),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+      return corpo;
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao consultar o Protheus' };
+    }
+  },
+
+  alterarMinhaSenha: async (
+    token: string,
+    senhaAtual: string,
+    novaSenha: string
+  ): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch('/api/minha-conta/senha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headersComToken(token) },
+        body: JSON.stringify({ senhaAtual, novaSenha }),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      return resp.ok ? { sucesso: true } : { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao alterar a senha' };
+    }
+  },
+
+  salvarMinhaSenhaProtheus: async (
+    token: string,
+    protheusSenha: string
+  ): Promise<{ sucesso: boolean; usuario?: Usuario; erro?: string }> => {
+    try {
+      const resp = await fetch('/api/minha-conta/protheus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headersComToken(token) },
+        body: JSON.stringify({ protheusSenha }),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+      return { sucesso: true, usuario: corpo.usuario };
+    } catch (erro) {
+      return {
+        sucesso: false,
+        erro: erro instanceof Error ? erro.message : 'Falha ao validar a conta no Protheus',
+      };
+    }
   },
 
   criar: async (
@@ -76,6 +135,7 @@ export const usuarioService = {
       papel: 'ADMIN' | 'OPERADOR';
       protheusCodigo?: string | null;
       protheusNome?: string | null;
+      protheusSenha?: string;
       protheusVendFilial?: string | null;
       protheusVendCodigo?: string | null;
       protheusVendNome?: string | null;
@@ -105,6 +165,7 @@ export const usuarioService = {
       senha?: string;
       protheusCodigo?: string | null;
       protheusNome?: string | null;
+      protheusSenha?: string;
       protheusVendFilial?: string | null;
       protheusVendCodigo?: string | null;
       protheusVendNome?: string | null;
@@ -119,6 +180,21 @@ export const usuarioService = {
       const corpo = await resp.json().catch(() => ({}));
       if (!resp.ok) return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
       return { sucesso: true, usuario: corpo };
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
+  },
+
+  excluir: async (token: string, id: string): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch(`/api/usuarios/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: headersComToken(token),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      return resp.ok
+        ? { sucesso: true }
+        : { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
     } catch (erro) {
       return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
     }

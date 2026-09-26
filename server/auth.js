@@ -3,6 +3,13 @@ import bcrypt from 'bcryptjs';
 import { getDb } from './db.js';
 
 export function paraUsuarioFrontend(linha) {
+  const protheusSenhaDefinida = !!linha.protheus_usr_senha_cifrada;
+  const prontoParaVender = !!(
+    linha.protheus_usr_codigo &&
+    linha.protheus_vend_filial &&
+    linha.protheus_vend_codigo &&
+    protheusSenhaDefinida
+  );
   return {
     id: linha.id,
     nome: linha.nome,
@@ -12,9 +19,11 @@ export function paraUsuarioFrontend(linha) {
     criadoEm: linha.criado_em,
     protheusCodigo: linha.protheus_usr_codigo || null,
     protheusNome: linha.protheus_usr_nome || null,
+    protheusSenhaDefinida,
     protheusVendFilial: linha.protheus_vend_filial || null,
     protheusVendCodigo: linha.protheus_vend_codigo || null,
     protheusVendNome: linha.protheus_vend_nome || null,
+    prontoParaVender,
   };
 }
 

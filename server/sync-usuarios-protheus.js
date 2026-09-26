@@ -7,6 +7,7 @@ import { getMssqlConfig } from './mssql-config.js';
 const QUERY = `
 SELECT
     RTRIM(USR_CODIGO) AS codigo,
+    RTRIM(USR_ID)     AS id_protheus,
     RTRIM(USR_NOME)   AS nome,
     RTRIM(USR_EMAIL)  AS email
 FROM SYS_USR
@@ -22,9 +23,10 @@ export async function syncUsuariosProtheus() {
 
     const db = getDb();
     const upsert = db.prepare(`
-      INSERT INTO protheus_usuarios (codigo, nome, email, atualizado_em)
-      VALUES (@codigo, @nome, @email, @atualizado_em)
+      INSERT INTO protheus_usuarios (codigo, id_protheus, nome, email, atualizado_em)
+      VALUES (@codigo, @id_protheus, @nome, @email, @atualizado_em)
       ON CONFLICT(codigo) DO UPDATE SET
+        id_protheus = excluded.id_protheus,
         nome = excluded.nome,
         email = excluded.email,
         atualizado_em = excluded.atualizado_em
@@ -36,6 +38,7 @@ export async function syncUsuariosProtheus() {
       for (const usuario of usuarios) {
         upsert.run({
           codigo: usuario.codigo,
+          id_protheus: usuario.id_protheus,
           nome: usuario.nome,
           email: usuario.email || null,
           atualizado_em: agora,

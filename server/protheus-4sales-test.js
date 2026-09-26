@@ -51,9 +51,12 @@ export function prepararTeste4Sales(documento) {
   };
 }
 
-export async function enviarTeste4Sales(preparado, { timeoutMs = 150000 } = {}) {
-  const usuario = process.env.PROTHEUS_REST_USER;
-  const senha = process.env.PROTHEUS_REST_PASSWORD;
+export async function enviarTeste4Sales(preparado, { timeoutMs = 150000, credenciaisProtheus } = {}) {
+  // Login do operador (ver credenciais-protheus.js) tem prioridade — é dele que o Protheus deriva o
+  // vendedor do bilhete (RFATA03.PRW ignora o campo "seller" do JSON e usa quem está autenticado na
+  // chamada). O usuário/senha fixos do .env ficam só como fallback pra chamadas sem operador definido.
+  const usuario = credenciaisProtheus?.usuario || process.env.PROTHEUS_REST_USER;
+  const senha = credenciaisProtheus?.senha || process.env.PROTHEUS_REST_PASSWORD;
   if (!usuario || !senha) throw new Error('Credenciais REST não configuradas no servidor do PDV.');
   const inicio = Date.now();
   try {

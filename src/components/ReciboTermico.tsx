@@ -1,5 +1,6 @@
 import { VendaDetalhe } from '../services/vendaService';
 import { formatMoney } from '../utils/formatters';
+import { rotuloFilial } from '../utils/filiais';
 
 // Dados fixos da empresa — mesmos do cabeçalho do bilhete impresso pela Protheus (BILHETE.pdf).
 const EMPRESA = {
@@ -60,7 +61,7 @@ export const ReciboTermico = ({ venda }: { venda: VendaDetalhe }) => {
       <Separador />
 
       <Linha esquerda={`CUPOM: ${venda.numeroCupom}`} direita={`${data} ${hora}`} />
-      <Linha esquerda={`LOJA: ${venda.loja}`} direita={`CAIXA: ${venda.caixa}`} />
+      <Linha esquerda={`LOJA: ${rotuloFilial(venda.loja)}`} direita={`CAIXA: ${venda.caixa}`} />
 
       <Separador />
 

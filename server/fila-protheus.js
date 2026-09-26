@@ -1,6 +1,8 @@
 import { getDb } from './db.js';
 import { prepararVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
 import { pareceFalhaDeRede, descreverErro } from './protheus-4sales-test.js';
+import { decifrarSenhaProtheus } from './credenciais-protheus.js';
+import { consultarVendedorDoUsuario } from './protheus-usuario.js';
 
 // Reenviar a mesma venda (mesmo idVendaPdv) pro Protheus é seguro — confirmado que não duplica
 // bilhete quando já existe um pra aquele id. Isso permite reprocessar automaticamente também
@@ -29,11 +31,58 @@ export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
   `).run(agora.toISOString(), venda.id, limiteRetentativa);
   if (!reservada.changes) return { sucesso: false, http: 409, erro: 'Envio já em andamento ou tentado recentemente demais — aguarde antes de reenviar.' };
   let preparado;
+  let credenciaisProtheus;
   try {
     const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(venda.id);
-    const vendedores = db.prepare('SELECT * FROM usuarios WHERE nome = ?').all(venda.operador);
-    if (vendedores.length !== 1) throw new Error('Operador não identificado de forma única. Confira Usuários.');
-    preparado = await prepararVenda4Sales(venda, itens, vendedores[0], opcoes);
+    // Vendas novas guardam a chave estável do usuário autenticado. A busca por nome existe apenas
+    // para vendas antigas, criadas antes da coluna usuario_id; nomes podem mudar ou se repetir.
+    let vendedor = venda.usuario_id
+      ? db.prepare('SELECT * FROM usuarios WHERE id = ?').get(venda.usuario_id)
+      : null;
+    if (!vendedor) {
+      const vendedoresLegados = db.prepare('SELECT * FROM usuarios WHERE nome = ?').all(venda.operador);
+      if (vendedoresLegados.length !== 1) throw new Error('Operador da venda não identificado de forma única. Confira Usuários.');
+      vendedor = vendedoresLegados[0];
+    }
+    // O Protheus deriva o vendedor do bilhete de quem está autenticado na chamada REST, não do campo
+    // "seller" do JSON (RFATA03.PRW sobrescreve Z4_VEND com o vendedor do usuário logado) — por isso
+    // cada operador precisa do próprio login Protheus, não só do vínculo com o vendedor (SA3).
+    if (!vendedor.protheus_usr_codigo || !vendedor.protheus_usr_senha_cifrada) {
+      throw new Error('Vincule o login Protheus (usuário e senha) do operador em Usuários antes de enviar.');
+    }
+    credenciaisProtheus = { usuario: vendedor.protheus_usr_codigo, senha: decifrarSenhaProtheus(vendedor.protheus_usr_senha_cifrada) };
+    // Não confia no vendedor salvo na tela: pergunta ao próprio Protheus qual SA3 está ligada ao
+    // login do Basic Auth. Assim, seller no JSON e o vendedor que RFATA03 deriva de __cUserID são
+    // sempre o mesmo. É uma consulta GET, sem alteração de cadastro.
+    const vendedorRest = await consultarVendedorDoUsuario({
+      ...credenciaisProtheus,
+      filial: '01',
+      timeoutMs: opcoes?.timeoutMs,
+    });
+    vendedor = {
+      ...vendedor,
+      protheus_usr_id: vendedorRest.usuarioId,
+      protheus_vend_filial: vendedorRest.filial,
+      protheus_vend_codigo: vendedorRest.codigo,
+      protheus_vend_nome: vendedorRest.nome,
+    };
+    // Uma venda que já chegou a ser preparada deve repetir exatamente o mesmo `_id`. Isso mantém
+    // os UUIDs das tentativas anteriores e impede duplicidade durante a transição para o novo
+    // identificador legível (cupom-caixa-usuário-data).
+    let idIntegracaoAnterior = venda.id_integracao || null;
+    if (venda.payload_protheus) {
+      try {
+        idIntegracaoAnterior = JSON.parse(venda.payload_protheus)?.body?._id || null;
+      } catch {
+        // Payload legado inválido não impede uma venda que nunca chegou a ser enviada.
+      }
+    }
+    preparado = await prepararVenda4Sales(
+      { ...venda, id_integracao: idIntegracaoAnterior },
+      itens,
+      vendedor,
+      opcoes
+    );
   } catch (erro) {
     // Erro de negócio ou de rede: devolve pra fila ('LOCAL'). Se for falta de conexão, a fila
     // tenta de novo sozinha no próximo ciclo; se for erro de cadastro, fica pendente até alguém
@@ -48,14 +97,15 @@ export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
     );
     return { sucesso: false, http: 422, erro: mensagemErro, semInternet: pareceFalhaDeRede(erro) };
   }
-  db.prepare("UPDATE vendas SET status_protheus = 'CONFERIR', payload_protheus = ?, resultado_protheus = ?, protheus_atualizado_em = ? WHERE id = ?").run(
+  db.prepare("UPDATE vendas SET status_protheus = 'CONFERIR', id_integracao = ?, payload_protheus = ?, resultado_protheus = ?, protheus_atualizado_em = ? WHERE id = ?").run(
+    preparado.body._id,
     JSON.stringify(preparado),
     JSON.stringify({ sucesso: false, erro: 'Envio iniciado. Aguarde; se interrompido, confira no Protheus.' }),
     new Date().toISOString(),
     venda.id
   );
   try {
-    const resultado = await enviarVenda4Sales(preparado, opcoes);
+    const resultado = await enviarVenda4Sales(preparado, { ...opcoes, credenciaisProtheus });
     db.prepare('UPDATE vendas SET status_protheus = ?, bilhete_protheus = ?, resultado_protheus = ?, protheus_atualizado_em = ? WHERE id = ?').run(
       resultado.sucesso ? 'INTEGRADO' : 'CONFERIR',
       resultado.bilhete,

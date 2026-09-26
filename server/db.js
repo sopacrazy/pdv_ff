@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { montarIdIntegracao } from './id-integracao.js';
 
 const ADMIN_LOGIN_PADRAO = process.env.ADMIN_LOGIN || 'admin';
 const ADMIN_SENHA_PADRAO = process.env.ADMIN_SENHA || 'admin123';
@@ -95,6 +96,13 @@ export function getDb() {
       aberto_em TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS configuracao_sistema (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      filial TEXT NOT NULL DEFAULT '01',
+      caixa TEXT NOT NULL DEFAULT '001',
+      atualizado_em TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS usuarios (
       id TEXT PRIMARY KEY,
       nome TEXT NOT NULL,
@@ -113,6 +121,7 @@ export function getDb() {
 
     CREATE TABLE IF NOT EXISTS protheus_usuarios (
       codigo TEXT PRIMARY KEY,
+      id_protheus TEXT,
       nome TEXT,
       email TEXT,
       atualizado_em TEXT
@@ -122,12 +131,14 @@ export function getDb() {
       filial TEXT NOT NULL,
       codigo TEXT NOT NULL,
       nome TEXT,
+      usuario_codigo TEXT,
       atualizado_em TEXT,
       PRIMARY KEY (filial, codigo)
     );
   `);
 
   instancia.prepare('INSERT OR IGNORE INTO caixa_estado (id, aberto, fundo_de_troco) VALUES (1, 0, 0)').run();
+  instancia.prepare("INSERT OR IGNORE INTO configuracao_sistema (id, filial, caixa) VALUES (1, '01', '001')").run();
 
   // Cria o admin inicial se ainda não existir nenhum usuário.
   const totalUsuarios = instancia.prepare('SELECT COUNT(*) AS n FROM usuarios').get().n;
@@ -162,13 +173,28 @@ export function getDb() {
   garantirColuna(instancia, 'venda_itens', 'unidade', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_usr_codigo', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_usr_nome', 'TEXT');
+  // Senha do login Protheus (REST) do operador, cifrada (ver credenciais-protheus.js) — usada na
+  // chamada ao 4Sales pra o bilhete sair com o vendedor certo (RFATA03.PRW deriva Z4_VEND de quem
+  // está autenticado na chamada, não do campo "seller" do JSON).
+  garantirColuna(instancia, 'usuarios', 'protheus_usr_senha_cifrada', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_filial', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_codigo', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_nome', 'TEXT');
+  // A venda precisa guardar o usuário autenticado que a criou. O nome é apenas um texto de
+  // impressão e pode mudar ou se repetir; usuario_id é a chave estável usada pela fila REST.
+  garantirColuna(instancia, 'vendas', 'usuario_id', 'TEXT');
+  // Espelha SA3.A3_CODUSR. É exatamente o vínculo consultado pelo RFATA03 (índice 7 da SA3)
+  // para transformar o usuário autenticado (__cUserID) no vendedor do bilhete.
+  garantirColuna(instancia, 'protheus_vendedores', 'usuario_codigo', 'TEXT');
+  // SYS_USR.USR_CODIGO é o login do Basic Auth; SA3.A3_CODUSR, porém, aponta para SYS_USR.USR_ID.
+  // Os dois valores precisam estar no cache para validar o vínculo sem confundir login com ID.
+  garantirColuna(instancia, 'protheus_usuarios', 'id_protheus', 'TEXT');
 
   garantirColuna(instancia, 'vendas', 'bilhete_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'resultado_protheus', 'TEXT');
   garantirColuna(instancia, 'vendas', 'payload_protheus', 'TEXT');
+  // Identificador legível enviado no `_id` do 4Sales e gravado pelo Protheus em Z4_XPED4SA.
+  garantirColuna(instancia, 'vendas', 'id_integracao', 'TEXT');
   garantirColuna(instancia, 'vendas', 'protheus_atualizado_em', 'TEXT');
   garantirColuna(instancia, 'clientes', 'cond_pagamento', 'TEXT');
   // Data de operação (YYYY-MM-DD): quando setada, novas vendas gravam essa data em data_local (o
@@ -176,6 +202,41 @@ export function getDb() {
   // pela loja que opera de madrugada e adianta a data no Protheus antes da virada. NULL = automático
   // (usa a data real). Nunca afeta criado_em, que continua sendo o horário real da venda.
   garantirColuna(instancia, 'caixa_estado', 'data_operacao', 'TEXT');
+
+  // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
+  // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.
+  const vendasSemIdIntegracao = instancia.prepare(`
+    SELECT v.*, COALESCE(pu.id_protheus, pv.usuario_codigo) AS usuario_protheus_id
+    FROM vendas v
+    LEFT JOIN usuarios u ON u.id = v.usuario_id
+    LEFT JOIN protheus_usuarios pu ON pu.codigo = u.protheus_usr_codigo
+    LEFT JOIN protheus_vendedores pv
+      ON pv.filial = u.protheus_vend_filial AND pv.codigo = u.protheus_vend_codigo
+    WHERE v.id_integracao IS NULL OR v.id_integracao = ''
+  `).all();
+  const gravarIdIntegracao = instancia.prepare('UPDATE vendas SET id_integracao = ? WHERE id = ?');
+  const migrarIdsIntegracao = instancia.transaction((vendas) => {
+    for (const venda of vendas) {
+      let idAnterior = null;
+      if (venda.payload_protheus) {
+        try {
+          idAnterior = JSON.parse(venda.payload_protheus)?.body?._id || null;
+        } catch {
+          // Payload inválido: tenta reconstruir somente quando houver todos os dados necessários.
+        }
+      }
+      try {
+        const idIntegracao = montarIdIntegracao(
+          { ...venda, id_integracao: idAnterior },
+          venda.usuario_protheus_id
+        );
+        gravarIdIntegracao.run(idIntegracao, venda.id);
+      } catch {
+        // Venda legada incompleta permanece sem ID até que seus vínculos possam ser corrigidos.
+      }
+    }
+  });
+  migrarIdsIntegracao(vendasSemIdIntegracao);
   return instancia;
 }
 
