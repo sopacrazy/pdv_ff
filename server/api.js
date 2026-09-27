@@ -128,9 +128,10 @@ export function validarBilheteLocal(venda) {
     const creditoAtualizado = cliente.credito_atualizado_em && new Date(cliente.credito_atualizado_em).getTime();
     if (!creditoAtualizado) {
       erros.push('Saldo de crédito ainda não foi sincronizado para este cliente. Conecte a VPN e aguarde a sincronização.');
-    } else if (Date.now() - creditoAtualizado > 10 * 60 * 1000) {
-      erros.push('Saldo de crédito do cliente está desatualizado. Conecte a VPN e aguarde a sincronização.');
     } else {
+      // O Bilhete é local-first: se a REST 4Sales estiver indisponível, o último snapshot válido
+      // continua sendo usado. A idade do registro não pode impedir uma venda offline; somente a
+      // ausência total do snapshot é bloqueante.
       const condicao = String(cliente.condicao_pagamento || '').trim();
       const permiteSemCredito = condicao.startsWith('9') || ['001', '200', '033'].includes(condicao);
       const totalReais = Number(venda?.total || 0) / 100;
@@ -167,7 +168,10 @@ export function validarBilheteLocal(venda) {
   const porChave = new Map(sincronizacoes.map((s) => [s.chave, s.atualizado_em]));
   for (const [chave, rotulo] of [['clientes_sync', 'clientes'], ['financeiro_sync', 'financeiro'], ['produtos_sync', 'produtos'], [`precos_${cliente?.tabela_preco || ''}`, 'preços']]) {
     const atualizado = porChave.get(chave);
-    if (!atualizado || Date.now() - new Date(atualizado).getTime() > 10 * 60 * 1000) erros.push(`Cache de ${rotulo} desatualizado. Conecte a VPN e aguarde a sincronização.`);
+    // Um marcador existente prova que ao menos uma carga completa e válida foi gravada. Quando a
+    // API cai, preservamos e usamos esse retrato sem prazo de expiração. A sincronização seguinte
+    // o substitui de forma transacional assim que a conexão voltar.
+    if (!atualizado) erros.push(`Cache de ${rotulo} ainda não foi sincronizado. Conecte a VPN e aguarde a primeira sincronização.`);
   }
   return { erros: [...new Set(erros)], cliente };
 }

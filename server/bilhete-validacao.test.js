@@ -71,6 +71,25 @@ test('bloqueia quando o snapshot de crédito ainda não existe', () => {
   assert.ok(resultado.erros.some((erro) => erro.includes('ainda não foi sincronizado')));
 });
 
+test('continua validando com o último cache local quando a API 4Sales está fora', () => {
+  prepararCliente({ condicao: '010', saldo: 100 });
+  const antigo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const db = getProtheusCacheDb();
+  db.prepare('UPDATE situacoes_credito SET atualizado_em=?').run(antigo);
+  db.prepare('UPDATE cache_metadata SET atualizado_em=?').run(antigo);
+
+  const resultado = validarBilheteLocal(venda(6000));
+  assert.ok(!resultado.erros.some((erro) => erro.includes('desatualizado')));
+  assert.ok(!resultado.erros.some((erro) => erro.includes('ainda não foi sincronizado')));
+});
+
+test('bloqueia quando nunca houve a primeira sincronização dos caches obrigatórios', () => {
+  prepararCliente({ condicao: '001', saldo: 0 });
+  getProtheusCacheDb().prepare("DELETE FROM cache_metadata WHERE chave='financeiro_sync'").run();
+  const resultado = validarBilheteLocal(venda(6000));
+  assert.ok(resultado.erros.some((erro) => erro.includes('Cache de financeiro ainda não foi sincronizado')));
+});
+
 test('aceita preço acima do mínimo e rejeita preço abaixo da tabela', () => {
   prepararCliente({ condicao: '001', saldo: 0 });
   assert.ok(!validarBilheteLocal(venda(6100)).erros.some((erro) => erro.includes('abaixo do mínimo')));
