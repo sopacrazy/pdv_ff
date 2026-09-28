@@ -22,7 +22,10 @@ export const ModalBuscaProduto = () => {
     const buscar = async () => {
       if (busca.length >= 2) {
         const res = await produtoService.buscarPorDescricao(busca);
-        setResultados(res);
+        // Sem estoque nem aparece na busca — evita o operador perder tempo tentando um produto que
+        // já sabe que vai ser barrado ao adicionar. saldoEstoque null (nunca sincronizado) continua
+        // aparecendo: falta de dado não é o mesmo que falta de estoque.
+        setResultados(res.filter((produto) => produto.saldoEstoque == null || produto.saldoEstoque > 0));
         setSelectedIndex(0);
       } else {
         setResultados([]);

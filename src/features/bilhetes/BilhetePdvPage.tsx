@@ -162,6 +162,14 @@ export function BilhetePdvPage() {
     };
   }, [buscaCliente, cliente, selecionarCliente, token]);
 
+  // null/undefined = saldo não sincronizado ainda pra esse produto — não bloqueia (falta de dado
+  // não é o mesmo que falta de estoque). Só bloqueia quando o número existe e é insuficiente.
+  const avisarSemEstoque = useCallback((produto: Produto, quantidadeDesejada: number) => {
+    if (produto.saldoEstoque == null || quantidadeDesejada <= produto.saldoEstoque) return false;
+    mostrarToast(`Estoque insuficiente: ${produto.descricao} tem só ${produto.saldoEstoque} ${produto.unidade} disponível.`, 'erro');
+    return true;
+  }, [mostrarToast]);
+
   const adicionarProduto = useCallback((produto: Produto) => {
     if (!cliente) {
       mostrarToast('Selecione o cliente para incluir o produto no Bilhete.', 'erro');
@@ -169,6 +177,8 @@ export function BilhetePdvPage() {
     }
     setItens((atuais) => {
       const existente = atuais.find((item) => item.produto.codigo === produto.codigo);
+      const quantidadeAtual = existente?.quantidade ?? 0;
+      if (avisarSemEstoque(produto, quantidadeAtual + 1)) return atuais;
       if (existente) {
         setItemSelecionadoId(existente.id);
         return atuais.map((item) => item.id === existente.id
@@ -184,7 +194,7 @@ export function BilhetePdvPage() {
     setProdutos([]);
     setProdutoSelecionado(0);
     setTimeout(() => inputProduto.current?.focus(), 0);
-  }, [cliente, mostrarToast]);
+  }, [cliente, mostrarToast, avisarSemEstoque]);
 
   const procurarProdutos = useCallback(async (termo: string, incluirSeUnico = false) => {
     const pesquisa = termo.trim();
@@ -195,13 +205,22 @@ export function BilhetePdvPage() {
     if (requisicao !== sequenciaBusca.current) return;
     setBuscando(false);
     if (resultado.erro) mostrarToast(resultado.erro, 'erro');
-    if (incluirSeUnico && resultado.produtos.length === 1) {
-      adicionarProduto(resultado.produtos[0]);
+    // Sem estoque nem aparece na busca — evita o operador perder tempo tentando um produto que já
+    // sabe que vai ser barrado na hora de adicionar. saldoEstoque null (nunca sincronizado) continua
+    // aparecendo: falta de dado não é o mesmo que falta de estoque.
+    const disponiveis = resultado.produtos.filter((produto) => produto.saldoEstoque == null || produto.saldoEstoque > 0);
+    if (incluirSeUnico && disponiveis.length === 1) {
+      adicionarProduto(disponiveis[0]);
       return;
     }
-    setProdutos(resultado.produtos);
+    setProdutos(disponiveis);
     setProdutoSelecionado(0);
-    if (incluirSeUnico && resultado.produtos.length === 0) mostrarToast(`Produto não encontrado: ${pesquisa}`, 'erro');
+    if (incluirSeUnico && disponiveis.length === 0) {
+      mostrarToast(
+        resultado.produtos.length > 0 ? `Sem estoque disponível: ${pesquisa}` : `Produto não encontrado: ${pesquisa}`,
+        'erro'
+      );
+    }
   }, [adicionarProduto, cliente, mostrarToast, token]);
 
   // A barra principal aceita código e descrição. Código interno completo entra direto;
@@ -243,17 +262,28 @@ export function BilhetePdvPage() {
   const clienteAVista = cliente?.codigo.trim() === '0001' || cliente?.codigo.trim() === '000001';
 
   const alterarQuantidade = (id: string, numero: number) => {
-    setItens((atuais) => atuais.map((item) => item.id === id
-      ? { ...item, quantidade: numero, valorTotal: Math.round(numero * item.valorUnitario) }
-      : item));
+    setItens((atuais) => {
+      const item = atuais.find((i) => i.id === id);
+      if (item && avisarSemEstoque(item.produto, numero)) return atuais;
+      return atuais.map((item) => item.id === id
+        ? { ...item, quantidade: numero, valorTotal: Math.round(numero * item.valorUnitario) }
+        : item);
+    });
   };
 
   const alterarQuantidadeSegundaUnidade = (id: string, quantidadeSegunda: number) => {
-    setItens((atuais) => atuais.map((item) => {
-      if (item.id !== id) return item;
-      const quantidadePrimeira = paraPrimeiraUnidade(item.produto, quantidadeSegunda);
-      return quantidadePrimeira == null ? item : { ...item, quantidade: quantidadePrimeira, valorTotal: Math.round(quantidadePrimeira * item.valorUnitario) };
-    }));
+    setItens((atuais) => {
+      const item = atuais.find((i) => i.id === id);
+      if (item) {
+        const quantidadeConvertida = paraPrimeiraUnidade(item.produto, quantidadeSegunda);
+        if (quantidadeConvertida != null && avisarSemEstoque(item.produto, quantidadeConvertida)) return atuais;
+      }
+      return atuais.map((item) => {
+        if (item.id !== id) return item;
+        const quantidadePrimeira = paraPrimeiraUnidade(item.produto, quantidadeSegunda);
+        return quantidadePrimeira == null ? item : { ...item, quantidade: quantidadePrimeira, valorTotal: Math.round(quantidadePrimeira * item.valorUnitario) };
+      });
+    });
   };
 
   const removerSelecionado = useCallback(() => {

@@ -44,6 +44,17 @@ interface PdvState {
 
 const gerarId = () => Math.random().toString(36).substring(2, 9);
 
+// null/undefined = saldo não sincronizado ainda pra esse produto — não bloqueia (falta de dado não
+// é o mesmo que falta de estoque). Só bloqueia quando o número existe e é insuficiente de verdade.
+function avisarSemEstoque(produto: Produto, quantidadeDesejada: number): boolean {
+  if (produto.saldoEstoque == null || quantidadeDesejada <= produto.saldoEstoque) return false;
+  useToastStore.getState().mostrarToast(
+    `Estoque insuficiente: ${produto.descricao} tem só ${produto.saldoEstoque} ${produto.unidade} disponível.`,
+    'erro'
+  );
+  return true;
+}
+
 export const usePdvStore = create<PdvState>((set, get) => ({
   isCaixaAberto: false,
   fundoDeTroco: 0,
@@ -96,6 +107,8 @@ export const usePdvStore = create<PdvState>((set, get) => ({
   adicionarItem: (produto, quantidade) => {
     const { itens } = get();
     const existenteIndex = itens.findIndex((i) => i.produto.codigo === produto.codigo);
+    const quantidadeAtual = existenteIndex >= 0 ? itens[existenteIndex].quantidade : 0;
+    if (avisarSemEstoque(produto, quantidadeAtual + quantidade)) return;
 
     if (existenteIndex >= 0) {
       const novaLista = [...itens];
@@ -123,6 +136,8 @@ export const usePdvStore = create<PdvState>((set, get) => ({
 
   alterarQuantidade: (id, quantidade) => {
     const { itens } = get();
+    const item = itens.find((i) => i.id === id);
+    if (item && avisarSemEstoque(item.produto, quantidade)) return;
     const novaLista = itens.map((item) => {
       if (item.id === id) {
         return {
@@ -140,6 +155,11 @@ export const usePdvStore = create<PdvState>((set, get) => ({
   // editar pela 2ª unidade (ex: peso lido na balança) só converte pra 1ª unidade antes de aplicar.
   alterarQuantidadeSegundaUnidade: (id, quantidadeSegunda) => {
     const { itens } = get();
+    const item = itens.find((i) => i.id === id);
+    if (item) {
+      const quantidadeConvertida = paraPrimeiraUnidade(item.produto, quantidadeSegunda);
+      if (quantidadeConvertida !== null && avisarSemEstoque(item.produto, quantidadeConvertida)) return;
+    }
     const novaLista = itens.map((item) => {
       if (item.id !== id) return item;
       const quantidade = paraPrimeiraUnidade(item.produto, quantidadeSegunda);
