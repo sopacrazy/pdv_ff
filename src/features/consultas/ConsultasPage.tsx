@@ -25,8 +25,8 @@ import { useAuthStore } from '../../store/authStore';
 import { AppShell } from '../../components/AppShell';
 import { Toast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { ReciboTermico } from '../../components/ReciboTermico';
 import { useImpressaoCupom } from '../../hooks/useImpressaoCupom';
+import { useImpressaoBilheteStore } from '../../store/impressaoBilheteStore';
 
 const ICONE_FORMA: Record<string, LucideIcon> = {
   Dinheiro: Banknote,
@@ -98,10 +98,23 @@ export function ConsultasPage() {
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'TODOS' | StatusProtheus>('TODOS');
-  const { vendaParaImprimir, imprimirPorId } = useImpressaoCupom();
+  const { imprimirPorId } = useImpressaoCupom();
+  // Só a ação — o estado e o efeito de impressão ficam no App.tsx (ver
+  // src/hooks/useImpressaoBilheteProtheus.ts).
+  const imprimirBilhete = useImpressaoBilheteStore((s) => s.imprimirBilhete);
 
   const imprimirVenda = async (e: React.MouseEvent, venda: VendaResumo) => {
     e.stopPropagation();
+    if (venda.tipoOperacao === 'BILHETE') {
+      try {
+        const bilhete = await vendaService.buscarVenda(venda.id);
+        if (!bilhete) throw new Error('Bilhete não encontrado');
+        imprimirBilhete(bilhete);
+      } catch {
+        mostrarToast('Não foi possível carregar o bilhete para impressão', 'erro');
+      }
+      return;
+    }
     const detalhe = await imprimirPorId(venda.id);
     if (!detalhe) {
       mostrarToast('Não foi possível carregar a venda para impressão', 'erro');
@@ -222,8 +235,7 @@ export function ConsultasPage() {
   const formatadorData = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' });
 
   return (
-    <>
-    <AppShell rotaAtiva="/consultas" className="print:hidden">
+    <AppShell rotaAtiva="/consultas">
       <Toast />
       <header className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
         <div>
@@ -395,7 +407,7 @@ export function ConsultasPage() {
                             <button
                               onClick={(e) => imprimirVenda(e, venda)}
                               className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                              title="Imprimir cupom (impressora térmica)"
+                              title={venda.tipoOperacao === 'BILHETE' ? 'Imprimir bilhete Protheus (A4)' : 'Imprimir cupom (impressora térmica)'}
                             >
                               <Printer size={16} />
                             </button>
@@ -502,8 +514,5 @@ export function ConsultasPage() {
         />
       )}
     </AppShell>
-    {/* Fora do wrapper print:hidden acima — só isto aparece quando a impressão dispara. */}
-    {vendaParaImprimir && <ReciboTermico venda={vendaParaImprimir} />}
-    </>
   );
 }

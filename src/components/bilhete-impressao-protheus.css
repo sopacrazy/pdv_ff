@@ -1,0 +1,21 @@
+#area-impressao-bilhete { display: none; }
+.bilhete-folha {
+  display: block;
+  width: 210mm;
+  height: 297mm;
+  background: white;
+  color: black;
+  fill: black;
+  font-family: 'Courier New', Courier, monospace;
+  font-variant-ligatures: none;
+  letter-spacing: normal;
+  text-transform: none;
+}
+@media print {
+  @page bilhete-protheus { size: A4 portrait; margin: 0; }
+  body:has(#area-impressao-bilhete) { margin: 0 !important; padding: 0 !important; background: white; }
+  body:has(#area-impressao-bilhete) > :not(#area-impressao-bilhete) { display: none !important; }
+  #area-impressao-bilhete { display: block !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .bilhete-folha { page: bilhete-protheus; break-inside: avoid; break-after: page; }
+  .bilhete-folha:last-child { break-after: auto; }
+}

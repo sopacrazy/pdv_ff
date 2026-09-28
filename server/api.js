@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import { randomUUID } from 'crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +14,7 @@ import { consultarVendedorDoUsuario } from './protheus-usuario.js';
 import { montarIdIntegracao } from './id-integracao.js';
 import { getProtheusCacheDb } from './protheus-cache-db.js';
 import { sincronizarCreditoCliente, sincronizarPrecosTabela } from './sync-bilhetes-4sales.js';
+import { imprimirCupom } from './impressora-termica.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +22,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // (Vite) fica em dist/ ao lado de server/. Em dev, o Vite roda seu próprio servidor (porta 3000)
 // e faz proxy de /api pra cá — normalmente não há dist/ nesse momento, então isso fica inativo.
 const DIST_DIR = path.join(__dirname, '..', 'dist');
+// Gerado por scripts/gerar-bundle-atualizacao.js (roda no fim de todo `npm run build`) — é o que o
+// tablet Android baixa via @capgo/capacitor-updater pra atualizar o app sem reinstalar o .apk (ver
+// as rotas /api/app/* abaixo). Nunca existe em dev (sem build), só no app empacotado.
+const BUNDLE_DIR = path.join(__dirname, '..', 'dist-bundle');
+const APP_VERSION_ATUAL = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version;
+
+// Comparação numérica de versões semver (major.minor.patch) — string simples ("0.1.13" > "0.1.9")
+// dava errado porque compara caractere a caractere, não os números.
+function versaoMaisNova(a, b) {
+  const pa = String(a || '0').split('.').map(Number);
+  const pb = String(b || '0').split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na !== nb) return na > nb;
+  }
+  return false;
+}
 
 function paraProdutoFrontend(linha) {
   return {
@@ -185,6 +205,17 @@ function buscarConfiguracaoSistema(db) {
   };
 }
 
+// Mesma regra usada no front (src/utils/unidades.ts) e no lado Protheus (U_PDVFORTFRUIT.prw):
+// B1_TIPCONV 'D' divide a quantidade da 1ª unidade pelo fator pra achar a 2ª, 'M' multiplica.
+// Calculado e gravado no momento da venda (ver inserirItem) pra não depender do cadastro atual do
+// produto ao montar o bilhete no formato Protheus depois — mesma razão da coluna "unidade".
+function calcularQuantidade2(produto, quantidade1) {
+  if (!produto?.segundaUnidade || !produto?.fatorConversao || produto.fatorConversao <= 0) return null;
+  const fator = produto.fatorConversao;
+  const valor = produto.tipoConversao === 'M' ? quantidade1 * fator : quantidade1 / fator;
+  return Math.round(valor * 1000) / 1000;
+}
+
 function validarVinculoProtheus(db, { protheusCodigo, protheusVendFilial, protheusVendCodigo }) {
   const codigo = String(protheusCodigo || '').trim();
   const filial = String(protheusVendFilial || '').trim();
@@ -214,6 +245,12 @@ function validarVinculoProtheus(db, { protheusCodigo, protheusVendFilial, prothe
 
 export function iniciarApi() {
   const app = express();
+  // Sem isso, o app Android (tablet de Bilhete, ver src/services/apiBase.ts) não consegue falar
+  // com este servidor: a página ali roda numa origem própria do WebView (https://localhost) e
+  // fetch('http://<ip-do-pc>:3001/...') é uma chamada entre origens diferentes — o navegador do PDV
+  // desktop nunca bate nisso porque front e API são servidos do mesmo host:porta. É rede local da
+  // loja, então liberamos geral em vez de restringir por origem.
+  app.use(cors());
   app.use(express.json());
 
   app.get('/api/health', (req, res) => {
@@ -681,11 +718,14 @@ export function iniciarApi() {
           WHEN LTRIM(TRIM(c.codigo), '0') = LTRIM(?, '0') THEN 1
           ELSE 2
         END,
-        c.nome
+        COALESCE(NULLIF(c.fantasia, ''), c.nome)
       LIMIT 50
     `).all(like, like, like, like, termo, termo);
+    // "nome" aqui é o nome reduzido (A1_NREDUZ, ver c.fantasy na sincronização 4Sales) — é o que o
+    // time reconhece na hora de achar o cliente, não a razão social completa (A1_NOME). Cliente sem
+    // nome reduzido cadastrado cai no nome completo mesmo, pra nunca aparecer em branco.
     res.json(linhas.map((c) => ({
-      codigo: c.codigo, loja: c.loja, nome: c.nome, fantasia: c.fantasia, cpfCnpj: c.cpf_cnpj,
+      codigo: c.codigo, loja: c.loja, nome: c.fantasia || c.nome, fantasia: c.fantasia, cpfCnpj: c.cpf_cnpj,
       condicaoPagamento: c.condicao_pagamento, condicaoDescricao: c.condicao_descricao,
       tabelaPreco: c.tabela_preco, tabelaDescricao: c.tabela_descricao,
       risco: c.risco, limiteCredito: Math.round((c.limite_credito || 0) * 100), status: c.status,
@@ -920,8 +960,8 @@ export function iniciarApi() {
     `);
 
     const inserirItem = db.prepare(`
-      INSERT INTO venda_itens (id, venda_id, codigo_produto, descricao, quantidade, valor_unitario, desconto, valor_total, unidade)
-      VALUES (@id, @venda_id, @codigo_produto, @descricao, @quantidade, @valor_unitario, @desconto, @valor_total, @unidade)
+      INSERT INTO venda_itens (id, venda_id, codigo_produto, descricao, quantidade, valor_unitario, desconto, valor_total, unidade, unidade2, quantidade2)
+      VALUES (@id, @venda_id, @codigo_produto, @descricao, @quantidade, @valor_unitario, @desconto, @valor_total, @unidade, @unidade2, @quantidade2)
     `);
 
     // O número do cupom é decidido aqui, dentro da transação — nunca confiar no que o cliente
@@ -981,6 +1021,8 @@ export function iniciarApi() {
           desconto: item.desconto,
           valor_total: item.valorTotal,
           unidade: item.produto?.unidade || null,
+          unidade2: item.produto?.segundaUnidade || null,
+          quantidade2: calcularQuantidade2(item.produto, item.quantidade),
         });
       }
     });
@@ -1007,16 +1049,33 @@ export function iniciarApi() {
     res.json(linhas.map(paraVendaResumo));
   });
 
-  app.get('/api/vendas/:id', (req, res) => {
-    const db = getDb();
-    const venda = db.prepare('SELECT * FROM vendas WHERE id = ?').get(req.params.id);
-    if (!venda) {
-      res.status(404).json({ erro: 'Venda não encontrada.' });
-      return;
-    }
-    const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(req.params.id);
-    res.json({
+  function buscarVendaDetalhe(db, id) {
+    const venda = db.prepare('SELECT * FROM vendas WHERE id = ?').get(id);
+    if (!venda) return null;
+    const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(id);
+    // Dados complementares disponíveis no cadastro sincronizado (não são um snapshot histórico).
+    const cache = getProtheusCacheDb();
+    const cliente = cache.prepare("SELECT fantasia, dados_json FROM clientes WHERE filial='01' AND codigo=? AND loja=? AND excluido=0")
+      .get(venda.cliente_codigo || '', venda.cliente_loja || '');
+    let cadastro = {};
+    try { cadastro = JSON.parse(cliente?.dados_json || '{}') || {}; } catch { /* cadastro antigo sem JSON válido */ }
+    const condicao = cache.prepare("SELECT descricao FROM condicoes_pagamento WHERE filial='01' AND codigo=? AND excluido=0")
+      .get(venda.forma_pagamento);
+    const vendedor = db.prepare('SELECT protheus_vend_codigo, protheus_vend_nome FROM usuarios WHERE id=?').get(venda.usuario_id || '');
+    const textoCadastro = (campo) => typeof cadastro[campo] === 'string' ? cadastro[campo].trim() : '';
+    return {
       ...paraVendaResumo(venda),
+      dataLocal: venda.data_local,
+      impressao: {
+        clienteFantasia: cliente?.fantasia || '',
+        clienteEndereco: [textoCadastro('address'), textoCadastro('neighborhood')].filter(Boolean).join(' - '),
+        clienteCidade: textoCadastro('city'),
+        clienteRg: textoCadastro('estadualregistration'),
+        clienteTelefone: [textoCadastro('ddd'), textoCadastro('phone')].filter(Boolean).join(' - '),
+        condicaoDescricao: condicao?.descricao || '',
+        vendedorCodigo: vendedor?.protheus_vend_codigo || '',
+        vendedorNome: vendedor?.protheus_vend_nome || '',
+      },
       itens: itens.map((item) => ({
         codigo: item.codigo_produto,
         descricao: item.descricao,
@@ -1025,8 +1084,38 @@ export function iniciarApi() {
         desconto: item.desconto,
         valorTotal: item.valor_total,
         unidade: item.unidade,
+        unidade2: item.unidade2,
+        quantidade2: item.quantidade2,
       })),
-    });
+    };
+  }
+
+  app.get('/api/vendas/:id', (req, res) => {
+    const detalhe = buscarVendaDetalhe(getDb(), req.params.id);
+    if (!detalhe) {
+      res.status(404).json({ erro: 'Venda não encontrada.' });
+      return;
+    }
+    res.json(detalhe);
+  });
+
+  // Imprime direto na impressora térmica via ESC/POS em modo RAW (ver server/impressora-termica.js)
+  // — substitui o window.print() antigo (src/components/ReciboTermico.tsx), que dependia do motor de
+  // página HTML do Chromium e cortava as bordas do cupom por causa da área não-imprimível que o
+  // driver da EPSON reporta ao Windows.
+  app.post('/api/vendas/:id/imprimir', autenticarMiddleware, async (req, res) => {
+    const detalhe = buscarVendaDetalhe(getDb(), req.params.id);
+    if (!detalhe) {
+      res.status(404).json({ erro: 'Venda não encontrada.' });
+      return;
+    }
+    try {
+      await imprimirCupom(detalhe);
+      res.json({ sucesso: true });
+    } catch (erro) {
+      console.error(`[api] Falha ao imprimir cupom da venda ${req.params.id}: ${erro?.message || erro}`);
+      res.status(500).json({ erro: 'Não foi possível imprimir o cupom. Verifique se a impressora está ligada e conectada.' });
+    }
   });
 
   app.delete('/api/vendas/:id', (req, res) => {
@@ -1073,6 +1162,34 @@ export function iniciarApi() {
     if (!bilhete) return res.status(400).json({ sucesso: false, erro: 'Informe o número do bilhete confirmado no Protheus.' });
     db.prepare("UPDATE vendas SET status_protheus = 'INTEGRADO', bilhete_protheus = ? WHERE id = ?").run(bilhete, venda.id);
     res.json({ sucesso: true });
+  });
+
+  // Live update do app Android (ver @capgo/capacitor-updater em capacitor.config.ts e
+  // src/services/atualizacaoApp.ts) — troca só o bundle web (JS/CSS/HTML) dentro do app já
+  // instalado, sem passar pelo instalador do Android. Cobre qualquer mudança de código React;
+  // uma mudança nativa de verdade (novo plugin Capacitor, nova permissão) ainda exige gerar e
+  // reinstalar um novo .apk manualmente — esse fluxo não cobre esse caso.
+  //
+  // Sem autenticação de propósito: o tablet chama isso ANTES de logar (a checagem roda no boot do
+  // app, e travar atrás de login criaria uma dependência circular — precisaria estar atualizado
+  // pra logar, mas só descobre se precisa atualizar depois de logado).
+  app.post('/api/app/atualizacao', (req, res) => {
+    const versaoDoAparelho = String(req.body?.version_name || req.body?.version_build || '0');
+    if (!fs.existsSync(path.join(BUNDLE_DIR, 'app-bundle.zip'))) {
+      return res.json({ kind: 'up_to_date', message: 'No new version available' });
+    }
+    if (!versaoMaisNova(APP_VERSION_ATUAL, versaoDoAparelho)) {
+      return res.json({ kind: 'up_to_date', message: 'No new version available' });
+    }
+    const protocolo = req.secure ? 'https' : 'http';
+    const url = `${protocolo}://${req.headers.host}/api/app/bundle.zip`;
+    res.json({ version: APP_VERSION_ATUAL, url });
+  });
+
+  app.get('/api/app/bundle.zip', (req, res) => {
+    const arquivo = path.join(BUNDLE_DIR, 'app-bundle.zip');
+    if (!fs.existsSync(arquivo)) return res.status(404).end();
+    res.sendFile(arquivo);
   });
 
   // Serve o build do front (Vite) quando ele existir — caso do app empacotado no Electron, onde

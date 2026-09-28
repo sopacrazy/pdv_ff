@@ -9,6 +9,12 @@ import { UsuariosPage } from '../features/admin/UsuariosPage';
 import { ConfiguracoesPage } from '../features/admin/ConfiguracoesPage';
 import { MinhaContaPage } from '../features/conta/MinhaContaPage';
 import { useAuthStore } from '../store/authStore';
+import { estaNoAppNativo } from '../services/apiBase';
+
+// No app Android (tablet dedicado ao Bilhete), "entrar no sistema" sempre quer dizer ir pro
+// Bilhete — tanto no login explícito quanto quando a sessão salva é restaurada sozinha (abrir o
+// app de novo sem precisar logar, ou reinstalar uma atualização mantendo o token salvo).
+const rotaInicial = () => (estaNoAppNativo() ? '/bilhetes' : '/home');
 
 // Guarda de Rota
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
@@ -112,7 +118,7 @@ export function AppRoutes() {
             </AdminRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/home" replace />} />
+        <Route path="*" element={<Navigate to={rotaInicial()} replace />} />
       </Routes>
     </BrowserRouter>
   );

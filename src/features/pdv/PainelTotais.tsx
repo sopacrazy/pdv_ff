@@ -13,7 +13,7 @@ export const PainelTotais = () => {
   const total = subtotal - totalDescontos;
 
   return (
-    <div className="w-[420px] shrink-0 bg-slate-50 flex flex-col border-l border-slate-200 h-full min-h-0">
+    <div className="pdv-summary shrink-0 bg-slate-50 flex flex-col border-l border-slate-200 h-full min-h-0">
 
       {/* Área rolável: encolhe em telas baixas sem nunca esconder o Total a Pagar */}
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col p-4 gap-4">
@@ -27,7 +27,7 @@ export const PainelTotais = () => {
         </div>
 
         {/* Logo da Empresa (fixa) — ocupa o espaço dos dois cards antigos (logo + último item) */}
-        <div className="shrink-0 bg-white p-8 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center">
+        <div className="pdv-brand shrink-0 bg-white p-8 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center">
           <img src={fortfruitLogo} alt="Fort Fruit" className="max-h-24 object-contain" />
         </div>
 
@@ -45,7 +45,7 @@ export const PainelTotais = () => {
       </div>
 
       {/* TOTAL A PAGAR — fixo fora da área rolável, sempre visível */}
-      <div className="shrink-0 p-4 pt-0">
+      <div className="pdv-total shrink-0 p-4 pt-0">
         <div className="bg-green-600 text-white rounded-2xl p-5 flex flex-col justify-center shadow-[0_8px_30px_rgb(22,163,74,0.3)] border border-green-500">
           <div className="font-black uppercase tracking-widest text-sm opacity-90">Total a Pagar</div>
           <div className="text-[44px] leading-none font-black tracking-tighter mt-2 tabular-nums">

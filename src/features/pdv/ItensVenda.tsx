@@ -118,7 +118,7 @@ export const ItensVenda = () => {
 
   return (
     <div ref={containerRef} className="overflow-auto h-full bg-white pb-16">
-      <table className="w-full text-left border-collapse whitespace-nowrap">
+      <table className="pdv-table w-full text-left border-collapse whitespace-nowrap">
         <thead className="sticky top-0 bg-slate-100 text-slate-600 text-base uppercase font-bold z-10 shadow-sm border-b border-slate-200">
           <tr>
             <th className="p-4 w-16 text-center">Item</th>
@@ -138,6 +138,7 @@ export const ItensVenda = () => {
             return (
               <tr
                 key={item.id}
+                data-segunda-unidade={temSegundaUnidade(item.produto)}
                 onClick={() => selecionarItem(item.id)}
                 title={semPreco ? 'Produto sem preço — não é possível finalizar a venda' : undefined}
                 className={clsx(
@@ -154,9 +155,10 @@ export const ItensVenda = () => {
                 <td className="p-4 text-center text-slate-400">{(index + 1).toString().padStart(3, '0')}</td>
                 <td className="p-4 text-slate-500">{item.produto.codigo}</td>
                 <td className="p-4 truncate" title={item.produto.descricao}>
-                  {item.produto.descricao}
+                  <strong className="pdv-item-description">{item.produto.descricao}</strong>
+                  <small className="pdv-item-code">Cód. {item.produto.codigo}</small>
                 </td>
-                <td className="p-1 text-right">
+                <td data-unidade={item.produto.unidade} className="p-1 text-right">
                   <CampoQuantidade
                     id={`qtd-1-${item.id}`}
                     valor={item.quantidade}
@@ -165,7 +167,7 @@ export const ItensVenda = () => {
                   />
                 </td>
                 <td className="p-4 text-center text-slate-400">{item.produto.unidade}</td>
-                <td className="p-1 text-right">
+                <td data-unidade={item.produto.segundaUnidade} className="p-1 text-right">
                   {temSegundaUnidade(item.produto) ? (
                     <CampoQuantidade
                       id={`qtd-2-${item.id}`}
@@ -180,10 +182,10 @@ export const ItensVenda = () => {
                 <td className="p-4 text-center text-slate-400">
                   {temSegundaUnidade(item.produto) ? item.produto.segundaUnidade : <span className="text-slate-300">—</span>}
                 </td>
-                <td className="p-4 text-right tabular-nums font-bold">
+                <td data-label="Vl. Unit" className="p-4 text-right tabular-nums font-bold">
                   {semPreco ? 'SEM PREÇO' : formatMoney(item.valorUnitario)}
                 </td>
-                <td className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
+                <td data-label="Total" className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
               </tr>
             );
           })}

@@ -44,6 +44,13 @@ export interface VendaResumo {
 }
 
 export interface VendaDetalhe extends VendaResumo {
+  dataLocal?: string;
+  impressao?: {
+    clienteFantasia?: string; clienteEndereco?: string; clienteCidade?: string;
+    clienteRg?: string; clienteTelefone?: string; clienteFax?: string;
+    rota?: string; vendedorCodigo?: string; vendedorNome?: string;
+    condicaoDescricao?: string; pesoTotal?: number;
+  };
   itens: {
     codigo: string;
     descricao: string;
@@ -52,6 +59,11 @@ export interface VendaDetalhe extends VendaResumo {
     desconto: number;
     valorTotal: number;
     unidade: string | null;
+    // Segunda unidade (ex: KG quando a 1ª é CX) e sua quantidade convertida, gravadas no momento
+    // da venda — ver server/db.js migração 5 e server/api.js calcularQuantidade2.
+    unidade2: string | null;
+    quantidade2: number | null;
+    pesoUnitario?: number | null;
   }[];
 }
 
@@ -97,6 +109,24 @@ export const vendaService = {
     const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}`);
     if (!resp.ok) return null;
     return resp.json();
+  },
+
+  // Manda imprimir direto na impressora térmica (ESC/POS via RAW print, ver
+  // server/impressora-termica.js) — não usa mais window.print()/HTML.
+  imprimirVenda: async (id: string, token: string): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/imprimir`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        const corpo = await resp.json().catch(() => ({}));
+        return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+      }
+      return { sucesso: true };
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
   },
 
   resumoSemana: async (): Promise<{ data: string; quantidade: number; total: number }[]> => {

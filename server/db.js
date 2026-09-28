@@ -257,6 +257,15 @@ export function getDb() {
     `).run();
   });
 
+  aplicarMigracao(instancia, 5, 'Segunda unidade do item no momento da venda (bilhete Protheus)', () => {
+    // Mesma lógica do comentário em "unidade" acima: guardado no item, não recalculado do cadastro
+    // atual do produto, pra uma venda antiga continuar mostrando exatamente o que foi vendido
+    // naquele dia mesmo se o fator de conversão do produto mudar depois. Usado pela coluna UM2 do
+    // bilhete no formato Protheus (RFATR21.PRW "Modelo 1").
+    garantirColuna(instancia, 'venda_itens', 'unidade2', 'TEXT');
+    garantirColuna(instancia, 'venda_itens', 'quantidade2', 'REAL');
+  });
+
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
   // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.
   const vendasSemIdIntegracao = instancia.prepare(`

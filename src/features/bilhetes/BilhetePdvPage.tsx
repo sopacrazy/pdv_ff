@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, RefreshCw, ShoppingCart, Smartphone, User, Wifi, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Menu, RefreshCw, ShoppingCart, Smartphone, User, Wifi, WifiOff, X, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '../../store/authStore';
 import { useToastStore } from '../../store/toastStore';
@@ -13,13 +13,16 @@ import { formatMoney } from '../../utils/formatters';
 import { rotuloFilial } from '../../utils/filiais';
 import { paraPrimeiraUnidade, paraSegundaUnidade, temSegundaUnidade } from '../../utils/unidades';
 import { Toast } from '../../components/Toast';
+import { Sidebar } from '../../components/Sidebar';
+import { useImpressaoBilheteStore } from '../../store/impressaoBilheteStore';
+import { estaNoAppNativo } from '../../services/apiBase';
 import './bilhete-tablet.css';
 import fortfruitLogo from '@/fortfruit-logo.png';
 
 const gerarId = () => Math.random().toString(36).slice(2, 10);
 const formatarQuantidade = (valor: number) => Number.isInteger(valor) ? String(valor) : String(valor).replace('.', ',');
 
-const CampoQuantidade = ({ valor, onConfirmar, title }: { valor: number; onConfirmar: (valor: number) => void; title: string }) => {
+const CampoQuantidade = ({ valor, onConfirmar, title, aoConfirmarComEnter }: { valor: number; onConfirmar: (valor: number) => void; title: string; aoConfirmarComEnter?: () => void }) => {
   const [texto, setTexto] = useState(formatarQuantidade(valor));
   const [focado, setFocado] = useState(false);
 
@@ -37,7 +40,9 @@ const CampoQuantidade = ({ valor, onConfirmar, title }: { valor: number; onConfi
     onFocus={(evento) => { setFocado(true); evento.currentTarget.select(); }}
     onChange={(evento) => setTexto(evento.target.value)}
     onBlur={() => { setFocado(false); confirmar(); }}
-    onKeyDown={(evento) => { if (evento.key === 'Enter') { evento.preventDefault(); confirmar(); } }}
+    // Enter é o fluxo normal aqui: ajustou a quantidade de um item já no bilhete e quer voltar
+    // direto pra escanear/digitar o próximo produto, sem precisar clicar no campo de busca.
+    onKeyDown={(evento) => { if (evento.key === 'Enter') { evento.preventDefault(); confirmar(); aoConfirmarComEnter?.(); } }}
     className="w-full bg-transparent text-right tabular-nums font-bold outline-none rounded px-1.5 py-1 border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20" />;
 };
 
@@ -56,6 +61,9 @@ export function BilhetePdvPage() {
   const { vendedor, loja, caixa, token } = useAuthStore();
   const { mostrarToast } = useToastStore();
   const internetOnline = useStatusInternet();
+  // Só a ação (não o estado nem o efeito de impressão em si) — isso fica no App.tsx, no nível
+  // raiz, pra sobreviver à troca de rota (ver src/hooks/useImpressaoBilheteProtheus.ts).
+  const imprimirBilhete = useImpressaoBilheteStore((s) => s.imprimirBilhete);
   const [orientacaoMensagem, setOrientacaoMensagem] = useState('Para continuar a venda, gire o tablet para a posição vertical.');
   const [ativandoRetrato, setAtivandoRetrato] = useState(false);
   const [horaAtual, setHoraAtual] = useState(new Date());
@@ -72,6 +80,7 @@ export function BilhetePdvPage() {
   const [buscando, setBuscando] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
   const [bloqueios, setBloqueios] = useState<string[]>([]);
+  const [menuAberto, setMenuAberto] = useState(false);
   const inputProduto = useRef<HTMLInputElement>(null);
   const inputNomeClienteAVista = useRef<HTMLInputElement>(null);
   const listaProdutos = useRef<HTMLDivElement>(null);
@@ -97,6 +106,18 @@ export function BilhetePdvPage() {
     setNomeClienteAVista('');
     limparBilhete(false);
   }, [limparBilhete, token]);
+
+  // Atalho pro chip "À VISTA" — mesmo cliente padrão que já era selecionado automaticamente ao
+  // digitar "0001" (ver efeito de busca abaixo), só que sem precisar digitar nada.
+  const selecionarClienteAVista = useCallback(async () => {
+    if (!token) return;
+    const resultados = await bilheteService.buscarClientes('0001', token);
+    const avista = resultados.find(
+      (resultado) => (resultado.codigo.trim() === '0001' || resultado.codigo.trim() === '000001') && resultado.loja.trim() === '01'
+    );
+    if (avista) selecionarCliente(avista);
+    else mostrarToast('Cliente à vista (0001) não encontrado no cache. Sincronize os clientes.', 'erro');
+  }, [token, selecionarCliente, mostrarToast]);
 
   // O campo de nome só existe após o cliente ser renderizado. Um único efeito
   // define o foco, sem disputar com o foco da limpeza do bilhete.
@@ -277,16 +298,27 @@ export function BilhetePdvPage() {
 
     // A partir daqui a tela já está livre para o próximo Bilhete. A chamada continua no servidor;
     // a fila automática cobre falta de conexão ou encerramento do aplicativo durante o envio.
+    //
+    // Impressão: só quando integrar (número real do Protheus) OU quando a loja fica sem internet
+    // (aí sai com o número local do PDV + marca d'água "PDV OFFLINE" — ver
+    // BilheteImpressaoProtheus.tsx) — a loja não pode simplesmente parar de vender por falta de
+    // rede. Rejeição de verdade (erro de negócio do Protheus, não de conexão) nunca imprime: o
+    // bilhete foi recusado, não faz sentido entregar como se fosse válido.
     void vendaService.enviarProtheus(resultado.id, token, { rapido: true }).then((envio) => {
       if (envio.sucesso) {
         mostrarToast(`Bilhete ${envio.bilhete || resultado.numeroCupom} confirmado no Protheus`, 'sucesso');
       } else if (envio.semInternet) {
-        mostrarToast(`Bilhete ${resultado.numeroCupom} aguardando conexão para envio ao Protheus.`, 'erro');
+        mostrarToast(`Bilhete ${resultado.numeroCupom} sem internet — impresso com número local (PDV OFFLINE), será integrado quando a conexão voltar.`, 'erro');
       } else {
         mostrarToast(`Bilhete ${resultado.numeroCupom} rejeitado: ${envio.erro || 'consulte o retorno na tela Consultas.'}`, 'erro');
       }
+      if (!estaNoAppNativo() && (envio.sucesso || envio.semInternet)) {
+        void vendaService.buscarVenda(resultado.id).then((detalhe) => {
+          if (detalhe) imprimirBilhete(detalhe);
+        });
+      }
     });
-  }, [caixa, cliente, finalizando, itens, loja, mostrarToast, nomeClienteAVista, token, total]);
+  }, [caixa, cliente, finalizando, imprimirBilhete, itens, loja, mostrarToast, nomeClienteAVista, token, total]);
 
   useEffect(() => {
     const atalhos = (evento: KeyboardEvent) => {
@@ -307,12 +339,12 @@ export function BilhetePdvPage() {
       } else if (evento.key === 'Escape') {
         evento.preventDefault();
         if (produtos.length) setProdutos([]);
-        else navigate('/home');
+        else setMenuAberto(true);
       }
     };
     window.addEventListener('keydown', atalhos);
     return () => window.removeEventListener('keydown', atalhos);
-  }, [bloqueios.length, finalizar, finalizando, limparBilhete, navigate, produtos.length, removerSelecionado]);
+  }, [bloqueios.length, finalizar, finalizando, limparBilhete, produtos.length, removerSelecionado]);
 
   const handleBuscaKeyDown = (evento: React.KeyboardEvent<HTMLInputElement>) => {
     if (evento.key === 'ArrowDown' && produtos.length) {
@@ -411,13 +443,18 @@ export function BilhetePdvPage() {
         </div>
       )}
 
-      <header className="bilhete-header h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20 shadow-sm">
-        <div>
-          <div className="font-bold text-lg text-slate-500 tracking-wider">CAIXA <span className="text-slate-800">{caixa}</span> · LOJA <span className="text-slate-800">{rotuloFilial(loja)}</span></div>
-          <button onClick={() => navigate('/home')} className="text-xs font-bold text-blue-600 hover:text-blue-700">ESC · Voltar ao início</button>
+      <header className="bilhete-header h-16 shrink-0 bg-white border-b border-slate-200 grid grid-cols-3 items-center px-6 z-20 shadow-sm">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={() => setMenuAberto(true)} className="shrink-0 p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors" title="Menu (ESC)">
+            <Menu size={20} />
+          </button>
+          <div className="min-w-0">
+            <div className="font-bold text-lg text-slate-500 tracking-wider truncate">CAIXA <span className="text-slate-800">{caixa}</span> · LOJA <span className="text-slate-800">{rotuloFilial(loja)}</span></div>
+            <button onClick={() => setMenuAberto(true)} className="text-xs font-bold text-blue-600 hover:text-blue-700">ESC · Menu</button>
+          </div>
         </div>
-        <div className="font-black text-2xl text-slate-800 tracking-widest bg-slate-100 px-6 py-1.5 rounded-lg border border-slate-200">NOVO <span className="text-blue-600">BILHETE</span></div>
-        <div className="text-right flex flex-col justify-center">
+        <div className="justify-self-center font-black text-2xl text-slate-800 tracking-widest bg-slate-100 px-6 py-1.5 rounded-lg border border-slate-200">NOVO <span className="text-blue-600">BILHETE</span></div>
+        <div className="justify-self-end text-right flex flex-col justify-center">
           <div className="font-bold text-sm uppercase tracking-wide text-slate-800">{vendedor?.nome}</div>
           <div className="text-sm text-slate-500 font-mono">{formatadorHora.format(horaAtual)}</div>
         </div>
@@ -432,6 +469,16 @@ export function BilhetePdvPage() {
               <div className="flex items-center gap-3 text-slate-700">
                 <User size={20} className="text-slate-500" />
                 {!cliente ? <input id="input-cliente-bilhete" aria-label="Buscar cliente por código, nome ou CPF/CNPJ" value={buscaCliente} onChange={(evento) => setBuscaCliente(evento.target.value)} onKeyDown={handleClienteKeyDown} placeholder="Código, nome ou CPF/CNPJ do cliente" className="w-full bg-transparent outline-none text-sm font-medium placeholder-slate-500" /> : <div className="min-w-0 flex-1"><strong className="block truncate text-xs">{cliente.nome}</strong><span className="block truncate text-[11px] text-slate-500">{cliente.codigo}/{cliente.loja} · {cliente.cpfCnpj}</span></div>}
+                {/* Atalho pro cliente padrão 0001 — a maioria dos bilhetes sai à vista, sem precisar digitar o código. */}
+                {!cliente && (
+                  <button
+                    type="button"
+                    onClick={selecionarClienteAVista}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-100 text-amber-800 text-xs font-bold hover:bg-amber-200 transition-colors"
+                  >
+                    <Zap size={12} /> À VISTA
+                  </button>
+                )}
                 {cliente && <button onClick={() => { setCliente(null); setNomeClienteAVista(''); limparBilhete(); }} className="text-xs font-bold text-blue-600">Trocar</button>}
               </div>
               {!cliente && clientes.length > 0 && <div ref={listaClientes} className="absolute left-0 right-0 top-[54px] bg-white border border-slate-200 rounded-lg shadow-2xl z-40 max-h-72 overflow-auto">{clientes.map((resultado, indice) => <button key={`${resultado.codigo}-${resultado.loja}`} onMouseEnter={() => setClienteSelecionado(indice)} onClick={() => selecionarCliente(resultado)} className={clsx('w-full text-left p-3 border-b transition-colors', clienteSelecionado === indice ? 'bg-blue-600 text-white' : 'bg-white hover:bg-blue-50')}><strong className="block">{resultado.nome}</strong><small className={clienteSelecionado === indice ? 'text-blue-100' : 'text-slate-500'}>{resultado.codigo}/{resultado.loja} · {resultado.cpfCnpj}</small></button>)}</div>}
@@ -510,9 +557,9 @@ export function BilhetePdvPage() {
                   {itens.map((item, indice) => (
                     <tr key={item.id} data-segunda-unidade={temSegundaUnidade(item.produto)} onClick={() => setItemSelecionadoId(item.id)} className={clsx('border-b border-slate-100 cursor-pointer transition-all duration-200', itemSelecionadoId === item.id ? 'bg-blue-100 border-l-[6px] border-l-blue-600 ring-1 ring-inset ring-blue-200 text-blue-950' : 'hover:bg-slate-50 even:bg-slate-50/50')}>
                       <td className="p-4 text-center text-slate-400">{String(indice + 1).padStart(3, '0')}</td><td className="p-4 text-slate-500">{item.produto.codigo}</td><td className="p-4 truncate" title={item.produto.descricao}><strong className="bilhete-item-description">{item.produto.descricao}</strong><small className="bilhete-item-code">Cód. {item.produto.codigo}</small></td>
-                      <td data-unidade={item.produto.unidade} className="p-1 text-right"><CampoQuantidade valor={item.quantidade} onConfirmar={(valor) => alterarQuantidade(item.id, valor)} title={`Quantidade em ${item.produto.unidade}`} /></td>
+                      <td data-unidade={item.produto.unidade} className="p-1 text-right"><CampoQuantidade valor={item.quantidade} onConfirmar={(valor) => alterarQuantidade(item.id, valor)} title={`Quantidade em ${item.produto.unidade}`} aoConfirmarComEnter={() => inputProduto.current?.focus()} /></td>
                       <td className="p-4 text-center text-slate-400">{item.produto.unidade}</td>
-                      <td data-unidade={item.produto.segundaUnidade} className="p-1 text-right">{temSegundaUnidade(item.produto) ? <CampoQuantidade valor={paraSegundaUnidade(item.produto, item.quantidade) ?? 0} onConfirmar={(valor) => alterarQuantidadeSegundaUnidade(item.id, valor)} title={`Quantidade em ${item.produto.segundaUnidade}`} /> : <span title="Produto sem segunda unidade ou fator de conversão cadastrado">Sem 2ª un.</span>}</td>
+                      <td data-unidade={item.produto.segundaUnidade} className="p-1 text-right">{temSegundaUnidade(item.produto) ? <CampoQuantidade valor={paraSegundaUnidade(item.produto, item.quantidade) ?? 0} onConfirmar={(valor) => alterarQuantidadeSegundaUnidade(item.id, valor)} title={`Quantidade em ${item.produto.segundaUnidade}`} aoConfirmarComEnter={() => inputProduto.current?.focus()} /> : <span title="Produto sem segunda unidade ou fator de conversão cadastrado">Sem 2ª un.</span>}</td>
                       <td className="p-4 text-center text-slate-400">{temSegundaUnidade(item.produto) ? item.produto.segundaUnidade : <span className="text-slate-300">—</span>}</td><td data-label="Valor unitário" className="p-4 text-right tabular-nums font-bold">{formatMoney(item.valorUnitario)}</td><td data-label="Total do item" className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
                       <td className="pr-3"><button onClick={(evento) => { evento.stopPropagation(); setItens((atuais) => atuais.filter((atual) => atual.id !== item.id)); }} className="text-red-500 hover:text-red-700" aria-label={`Remover ${item.produto.descricao}`} title="Remover item"><X size={18} /></button></td>
                     </tr>
@@ -550,12 +597,14 @@ export function BilhetePdvPage() {
         <button onClick={() => { inputProduto.current?.focus(); inputProduto.current?.select(); }} className="bilhete-secondary"><ShortcutChip tecla="F2" label="Buscar Produto" /></button>
         <button onClick={removerSelecionado} disabled={!itemSelecionadoId} className="bilhete-remove-selected"><ShortcutChip tecla="DEL" label="Cancelar Item" disabled={!itemSelecionadoId} /></button>
         <button onClick={() => limparBilhete()} disabled={itens.length === 0} className="bilhete-cancel"><ShortcutChip tecla="F12" label="Cancelar Bilhete" disabled={itens.length === 0} /></button>
-        <button onClick={() => navigate('/home')} className="bilhete-secondary"><ShortcutChip tecla="ESC" label="Sair do Bilhete" /></button>
+        <button onClick={() => setMenuAberto(true)} className="bilhete-secondary"><ShortcutChip tecla="ESC" label="Menu" /></button>
         <div className="bilhete-status ml-auto flex items-center gap-1.5">
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs whitespace-nowrap bg-slate-100 text-slate-500" title="Dados do Bilhete sincronizados automaticamente a cada 5 minutos"><RefreshCw size={13} /> Cache a cada 5 min</div>
           <div className={clsx('flex items-center p-1.5 rounded-md', internetOnline ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700')} title={internetOnline ? 'Conexão com o Protheus disponível' : 'Sem conexão com o Protheus'}>{internetOnline ? <Wifi size={14} /> : <WifiOff size={14} />}</div>
         </div>
       </footer>
+
+      <Sidebar rotaAtiva="/bilhetes" aberta={menuAberto} aoFechar={() => setMenuAberto(false)} />
     </div>
   );
 }

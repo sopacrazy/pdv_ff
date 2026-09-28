@@ -16,8 +16,8 @@ import { Wifi, WifiOff, RefreshCw, Pencil } from 'lucide-react';
 import { ItensVenda } from './ItensVenda';
 import { PainelTotais } from './PainelTotais';
 import { Toast } from '../../components/Toast';
-import { ReciboTermico } from '../../components/ReciboTermico';
 import { useImpressaoCupom } from '../../hooks/useImpressaoCupom';
+import './pdv-responsive.css';
 
 // Modais
 import { ModalAberturaCaixa } from './modais/ModalAberturaCaixa';
@@ -42,7 +42,7 @@ export const PdvPage = () => {
   const ultimaSincronizacao = useUltimaSincronizacao();
   // Por enquanto isso abre o diálogo de impressão do navegador (salvar em PDF) a cada venda
   // finalizada — quando o agent de impressão térmica existir, só o hook precisa mudar.
-  const { vendaParaImprimir, imprimirPorId } = useImpressaoCupom();
+  const { imprimirPorId } = useImpressaoCupom();
 
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [leitorValue, setLeitorValue] = useState('');
@@ -163,14 +163,13 @@ export const PdvPage = () => {
   );
 
   return (
-    <>
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-100 text-slate-900 font-sans print:hidden">
+    <div className="pdv-page flex flex-col h-screen overflow-hidden bg-slate-100 text-slate-900 font-sans">
       <Toast />
 
       {/* TOPO */}
-      <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20 shadow-sm">
-        <div>
-          <div className="font-bold text-lg text-slate-500 tracking-wider">
+      <header className="pdv-header h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20 shadow-sm">
+        <div className="min-w-0">
+          <div className="font-bold text-lg text-slate-500 tracking-wider truncate">
             CAIXA <span className="text-slate-800">{caixa}</span> &middot; LOJA <span className="text-slate-800">{rotuloFilial(loja)}</span>
           </div>
           <button
@@ -187,20 +186,20 @@ export const PdvPage = () => {
               : 'Data de operação: automática'}
           </button>
         </div>
-        <div className="font-black text-2xl text-slate-800 tracking-widest bg-slate-100 px-6 py-1.5 rounded-lg border border-slate-200">
+        <div className="shrink-0 font-black text-2xl text-slate-800 tracking-widest bg-slate-100 px-6 py-1.5 rounded-lg border border-slate-200">
           CUPOM Nº <span className="text-blue-600">{cupomNumero || '...'}</span>
         </div>
-        <div className="text-right flex flex-col justify-center">
-          <div className="font-bold text-sm uppercase tracking-wide text-slate-800">{vendedor?.nome}</div>
+        <div className="min-w-0 text-right flex flex-col justify-center">
+          <div className="font-bold text-sm uppercase tracking-wide text-slate-800 truncate">{vendedor?.nome}</div>
           <div className="text-sm text-slate-500 font-mono">{formatadorHora.format(horaAtual)}</div>
         </div>
       </header>
 
       {/* CORPO */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="pdv-main flex-1 flex overflow-hidden">
         {/* ESQUERDA */}
-        <div className="flex-[6.5] flex flex-col min-w-0 border-r border-slate-200 relative bg-white">
-          <div className="p-6 bg-white shadow-sm z-20 border-b border-slate-200 relative">
+        <div className="pdv-workspace flex-[6.5] flex flex-col min-w-0 border-r border-slate-200 relative bg-white">
+          <div className="pdv-search p-6 bg-white shadow-sm z-20 border-b border-slate-200 relative">
             <input
               id="input-leitor"
               ref={inputLeitorRef}
@@ -225,14 +224,14 @@ export const PdvPage = () => {
       </main>
 
       {/* RODAPÉ */}
-      <footer className="min-h-14 shrink-0 bg-white flex flex-wrap items-center px-3 py-2 gap-2 border-t border-slate-200">
+      <footer className="pdv-footer min-h-14 shrink-0 bg-white flex flex-wrap items-center px-3 py-2 gap-2 border-t border-slate-200">
         <ShortcutChip k="F1" label="Finalizar Venda" disabled={!isCaixaAberto || itens.length === 0 || !!itemSemPreco} />
         <ShortcutChip k="F2" label="Buscar Produto" disabled={!isCaixaAberto} />
         <ShortcutChip k="DEL" label="Cancelar Item" disabled={!isCaixaAberto || itens.length === 0 || !itemSelecionadoId} />
         <ShortcutChip k="F12" label="Cancelar Cupom" disabled={!isCaixaAberto || itens.length === 0} />
         <ShortcutChip k="ESC" label="Sair do PDV" disabled={!isCaixaAberto} />
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="pdv-status ml-auto flex items-center gap-1.5">
           <div
             className="flex items-center gap-1.5 px-2 py-1 rounded-md font-bold text-xs whitespace-nowrap bg-slate-100 text-slate-500"
             title={
@@ -269,8 +268,5 @@ export const PdvPage = () => {
       {modalAtivo === 'PAGAMENTO' && <ModalPagamento aoFinalizarImprimir={imprimirPorId} />}
       {modalDataOperacaoAberto && <ModalDataOperacao aoFechar={() => setModalDataOperacaoAberto(false)} />}
     </div>
-    {/* Fora do wrapper print:hidden acima — só isto aparece quando a impressão dispara. */}
-    {vendaParaImprimir && <ReciboTermico venda={vendaParaImprimir} />}
-    </>
   );
 };

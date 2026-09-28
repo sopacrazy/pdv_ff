@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+dist-bundle/
 coverage/
 .DS_Store
 *.log
@@ -12,6 +13,17 @@ server/data/
 # não vai pro repo público). O que a gente mesmo escreve fica em protheus-source/.
 /*.prw
 /*.PRW
+# Amostra real gerada pelo Protheus (dados de cliente/venda reais), usada só como referência
+# visual pra calibrar o layout do bilhete impresso — nunca vai pro repo.
+/BILHETE.pdf
+
+# APK gerado (build), nunca versionado — cada release fica no GitHub Releases, não no git.
+*.apk
+
+# Artefatos de debug/calibração do layout do bilhete (comparação visual, posições medidas do PDF
+# de referência) — scratch de desenvolvimento, não faz parte do código fonte.
+/output/
+/tmp/
 
 # Build/empacotamento do Electron.
 dist-electron/
@@ -20,3 +32,9 @@ release/
 # Token de acesso ao GitHub embutido no app empacotado (auto-update de repo privado) — nunca commitar
 # o real. build-resources/gh-token.example.txt fica versionado como modelo.
 build-resources/gh-token.txt
+
+# Chave de assinatura do APK Android (release) — sem ela, ninguém mais consegue gerar uma build que
+# o Android aceite como "atualização" da já instalada (teria que desinstalar e perder o IP do
+# servidor configurado). Nunca commitar; guardar backup fora do repo.
+build-resources/android-release.keystore
+android/keystore.properties

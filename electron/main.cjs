@@ -3,7 +3,7 @@
 // aqui dentro usamos import() dinâmico pra carregar o servidor (server/server.js, que é ESM).
 const path = require('node:path');
 const fs = require('node:fs');
-const { app, BrowserWindow, Menu, dialog, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, nativeTheme, shell, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
 const PORTA = 3001;
@@ -291,6 +291,22 @@ function fecharJanelaProgresso() {
   janelaProgresso = null;
 }
 
+// Impressão automática do bilhete (ver src/hooks/useImpressaoBilheteProtheus.ts): sem o `silent`,
+// webContents.print() abre o mesmo diálogo do window.print() do navegador. Sem `deviceName`, o
+// Electron manda pra impressora marcada como padrão no Windows — não precisamos descobrir qual é.
+// A página já está com a área de impressão certa visível (mesmo @media print usado por
+// window.print()), então isso imprime exatamente o que a tela já monta.
+ipcMain.handle('pdv:imprimir-silencioso', (evento) => {
+  const janela = BrowserWindow.fromWebContents(evento.sender);
+  if (!janela) return Promise.resolve({ sucesso: false, erro: 'Janela não encontrada.' });
+  return new Promise((resolve) => {
+    janela.webContents.print({ silent: true, printBackground: true }, (sucesso, motivo) => {
+      if (!sucesso) console.error(`[electron] Falha ao imprimir bilhete: ${motivo}`);
+      resolve({ sucesso, erro: sucesso ? null : motivo });
+    });
+  });
+});
+
 async function criarJanela() {
   janelaPrincipal = new BrowserWindow({
     width: 1366,
@@ -300,6 +316,7 @@ async function criarJanela() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 

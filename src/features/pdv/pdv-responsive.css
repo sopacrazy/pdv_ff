@@ -1,0 +1,44 @@
+/* PDV normal (não o Bilhete, que já tem seu próprio CSS responsivo em bilhete-tablet.css) — até
+   aqui tudo usava largura fixa (painel de totais w-[420px], tabela com whitespace-nowrap e
+   colunas de largura fixa), sem cair bem quando a janela do Electron é redimensionada menor que
+   o desktop maximizado padrão. Mesma técnica usada no Bilhete: painel de totais encolhe com
+   clamp(), e abaixo de 1399px a tabela vira cards empilhados em vez de colunas cortando. */
+.pdv-summary { width: clamp(280px, 26vw, 420px); }
+
+@media (max-width: 1399px) {
+  .pdv-header > div:nth-child(2) { font-size: 18px; padding: 8px 12px; letter-spacing: .08em; }
+  .pdv-header > div:first-child > div { font-size: 14px; letter-spacing: 0; }
+
+  .pdv-table, .pdv-table tbody { display: block; width: 100%; white-space: normal; }
+  .pdv-table thead { display: none; }
+  .pdv-table tbody { padding: 10px 12px; font-family: inherit; font-size: 16px; }
+  .pdv-table tr { display: grid; grid-template-columns: minmax(140px, 1fr) 88px 88px minmax(80px, auto) minmax(92px, auto); align-items: center; gap: 10px; margin-bottom: 8px; padding: 12px; border: 1px solid #dbe3ef; border-radius: 12px; }
+  .pdv-table td { padding: 0; min-width: 0; }
+  /* Esconde Item, Código (viram texto dentro da descrição) e as colunas de unidade separadas
+     (a unidade vira um sufixo dentro do próprio campo de quantidade, via data-unidade::after). */
+  .pdv-table td:nth-child(1), .pdv-table td:nth-child(2), .pdv-table td:nth-child(5), .pdv-table td:nth-child(7) { display: none; }
+  .pdv-table tr[data-segunda-unidade="false"] td:nth-child(6) > span { display: flex; min-height: 48px; align-items: center; justify-content: center; border: 1px dashed #cbd5e1; border-radius: 4px; font-size: 12px; color: #64748b; }
+  .pdv-table td:nth-child(3) { white-space: normal; overflow-wrap: anywhere; }
+  .pdv-item-description { display: block; font-size: 17px; line-height: 1.3; font-weight: 800; }
+  .pdv-item-code { display: block; margin-top: 4px; font-size: 11px; font-weight: 400; color: #64748b; }
+  .pdv-table td:nth-child(4), .pdv-table td:nth-child(6) { position: relative; }
+  .pdv-table td:nth-child(4)::before { content: 'Qtd. 1ª un.'; }
+  .pdv-table td:nth-child(6)::before { content: 'Qtd. 2ª un.'; }
+  .pdv-table td:nth-child(4)::before, .pdv-table td:nth-child(6)::before { display: block; text-align: left; font-size: 11px; color: #475569; margin-bottom: 4px; font-weight: 600; }
+  .pdv-table td[data-unidade]::after { content: attr(data-unidade); position: absolute; right: 8px; bottom: 16px; font-size: 11px; color: #64748b; pointer-events: none; }
+  .pdv-table td[data-unidade] input { min-width: 0; padding: 8px 32px 8px 6px; font-size: 20px; font-weight: 800; }
+  .pdv-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 500; color: #475569; margin-bottom: 6px; }
+  .pdv-table td[data-label] { white-space: nowrap; font-size: 18px; font-weight: 800; }
+  .pdv-table td[data-label="Total"] { color: #14532d; font-size: 20px; }
+
+  .pdv-total > div { padding: 16px; }
+  .pdv-total > div > div:last-child { font-size: 34px; }
+  .pdv-footer .pdv-status > div:first-child { display: none; }
+}
+
+@media (max-width: 1000px) {
+  .pdv-summary { width: clamp(240px, 30vw, 340px); }
+  .pdv-brand { display: none; }
+  .pdv-header { padding: 8px 12px; gap: 8px; }
+  .pdv-header > div:nth-child(2) { font-size: 15px; padding: 6px 10px; }
+}

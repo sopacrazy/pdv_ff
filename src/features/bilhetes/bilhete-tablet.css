@@ -132,8 +132,8 @@
 .bilhete-toolbar { flex-shrink: 0; }
 /* Mouse/keyboard workstations: a single entry strip leaves room for the sale. */
 @media (min-width: 1001px) and (pointer: fine) {
-  .bilhete-toolbar { display: grid; grid-template-columns: minmax(200px, .75fr) minmax(360px, 2.25fr); gap: 16px; align-items: start; padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: white; position: relative; z-index: 30; }
-  .bilhete-toolbar[data-cliente-avista="true"] { grid-template-columns: minmax(200px, .9fr) minmax(200px, 1fr) minmax(240px, 1.4fr); }
+  .bilhete-toolbar { display: grid; grid-template-columns: minmax(320px, 1.1fr) minmax(360px, 2fr); gap: 16px; align-items: start; padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background: white; position: relative; z-index: 30; }
+  .bilhete-toolbar[data-cliente-avista="true"] { grid-template-columns: minmax(280px, 1fr) minmax(220px, 1fr) minmax(240px, 1.3fr); }
   .bilhete-toolbar > .bilhete-client-section,
   .bilhete-toolbar > .bilhete-cash-name,
   .bilhete-toolbar > .bilhete-search { min-width: 0; padding: 0; border: 0; box-shadow: none; }

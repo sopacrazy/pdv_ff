@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, AlertCircle, Eye, EyeOff, Loader2, RefreshCw, ScanLine, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { estaNoAppNativo } from '../../services/apiBase';
 import fortfruitLogo from '@/fortfruit-logo.png';
 
 const DESTAQUES = [
@@ -28,7 +29,8 @@ export function LoginPage() {
     const resultado = await login(loginInput.trim(), senha);
     setCarregando(false);
     if (resultado.sucesso) {
-      navigate(resultado.prontoParaVender ? '/home' : '/minha-conta');
+      if (!resultado.prontoParaVender) navigate('/minha-conta');
+      else navigate(estaNoAppNativo() ? '/bilhetes' : '/home');
     } else {
       setErro(resultado.erro || 'Não foi possível entrar.');
     }
