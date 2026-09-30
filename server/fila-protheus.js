@@ -2,6 +2,7 @@ import { getDb } from './db.js';
 import { prepararVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
 import { pareceFalhaDeRede, descreverErro } from './protheus-4sales-test.js';
 import { validarContaRestPrincipal, credenciaisContaRestPrincipal } from './conta-rest-principal.js';
+import { consultarSituacaoBilhetes, situacaoBilhete, registrarExclusao } from './conferencia-bilhetes-protheus.js';
 
 // Reenviar a mesma venda (mesmo idVendaPdv) pro Protheus é seguro — confirmado que não duplica
 // bilhete quando já existe um pra aquele id. Isso permite reprocessar automaticamente também
@@ -31,6 +32,7 @@ async function enviarVendaSerializada(db, vendaId, opcoes) {
   const venda = db.prepare("SELECT * FROM vendas WHERE id = ? AND deletado = ''").get(vendaId);
   if (!venda) return { sucesso: false, http: 404, erro: 'Venda não encontrada.' };
   if (venda.status_protheus === 'INTEGRADO') return { sucesso: false, http: 409, erro: 'Venda já integrada ao Protheus.' };
+  if (venda.status_protheus === 'EXCLUIDO_PROTHEUS') return { sucesso: false, http: 409, erro: 'Bilhete excluído no Protheus. Reenvio bloqueado.' };
 
   const agora = new Date();
   const limiteRetentativa = new Date(agora.getTime() - RETRY_STATUS_INCERTO_MS).toISOString();
@@ -47,6 +49,14 @@ async function enviarVendaSerializada(db, vendaId, opcoes) {
   let preparado;
   let credenciaisProtheus;
   try {
+    // Antes de repetir uma tentativa, verifica se o ERP já excluiu o documento.
+    if (venda.payload_protheus || venda.bilhete_protheus) {
+      const situacao = situacaoBilhete(venda, await consultarSituacaoBilhetes([venda]));
+      if (situacao.situacao === 'EXCLUIDO') {
+        registrarExclusao(db, venda, situacao, agora.toISOString(), 'PREPARANDO');
+        return { sucesso: false, http: 409, erro: 'Bilhete excluído no Protheus. Reenvio bloqueado.' };
+      }
+    }
     const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(venda.id);
     // Vendas novas guardam a chave estável do usuário autenticado. A busca por nome existe apenas
     // para vendas antigas, criadas antes da coluna usuario_id; nomes podem mudar ou se repetir.

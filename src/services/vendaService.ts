@@ -15,7 +15,7 @@ export interface VendaParaSalvar {
   tipoOperacao?: 'PDV' | 'BILHETE';
 }
 
-export type StatusProtheus = 'LOCAL' | 'INTEGRADO' | 'PREPARANDO' | 'CONFERIR' | 'REJEITADO';
+export type StatusProtheus = 'LOCAL' | 'INTEGRADO' | 'PREPARANDO' | 'CONFERIR' | 'REJEITADO' | 'EXCLUIDO_PROTHEUS';
 
 export interface VendaResumo {
   id: string;
@@ -33,6 +33,8 @@ export interface VendaResumo {
   editadoEm: string | null;
   statusProtheus: StatusProtheus;
   protheusAtualizadoEm?: string | null;
+  protheusConferidoEm?: string | null;
+  protheusExcluidoEm?: string | null;
   bilheteProtheus?: string;
   resultadoProtheus?: ResultadoEnvioProtheus;
   valorRecebido: number | null;
@@ -78,6 +80,12 @@ export interface ResultadoEnvioProtheus {
 }
 
 export const vendaService = {
+  conferirProtheus: async (token: string): Promise<{ sucesso: boolean; excluidas?: number; restauradas?: number; naoLocalizadas?: number; erro?: string }> => {
+    try {
+      const resposta = await fetch('/api/vendas/conferir-protheus', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      return await resposta.json();
+    } catch { return { sucesso: false, erro: 'Não foi possível conferir os bilhetes.' }; }
+  },
   // O número do cupom é decidido pelo servidor (contador atômico na mesma transação do insert) —
   // o que a tela manda em `venda.numeroCupom` é só um preview, nunca é o valor realmente gravado.
   registrarVenda: async (venda: VendaParaSalvar, token: string): Promise<{ sucesso: boolean; id?: string; numeroCupom?: string; erro?: string }> => {

@@ -284,6 +284,12 @@ export function getDb() {
     }
   });
 
+  aplicarMigracao(instancia, 7, 'Conferência de exclusões dos bilhetes no Protheus', () => {
+    garantirColuna(instancia, 'vendas', 'protheus_conferido_em', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'protheus_excluido_em', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'protheus_status_antes_exclusao', 'TEXT');
+  });
+
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
   // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.
   const vendasSemIdIntegracao = instancia.prepare(`

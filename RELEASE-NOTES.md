@@ -1,4 +1,17 @@
-# PDV Fort Fruit 0.1.16
+# PDV Fort Fruit 0.1.17
+
+- Confere exclusões no Protheus ao iniciar e a cada cinco minutos, incluindo os registros com `D_E_L_E_T_='*'`.
+- Permite conferir imediatamente pelo botão **Conferir exclusões**, em Consultas.
+- Marca o bilhete como **Excluído no Protheus**, retira dos totais e bloqueia reenvio, preservando o histórico.
+- Exige correspondência de filial, bilhete e ID da integração. Ausência de registro ou falha de conexão não cancela a venda local.
+- Atualiza a situação se o mesmo bilhete for restaurado no Protheus, sem enviar uma nova venda.
+- Preserva a configuração e todas as correções das versões anteriores.
+
+Finalize ou cancele o cupom aberto antes de instalar. Use **Ajuda → Verificar atualizações agora** nas máquinas configuradas. O instalador preserva configurações, usuários e vendas. Na primeira abertura de uma máquina nova, importe o `.env` configurado, transferido localmente da máquina principal.
+
+Validação: 85 testes locais, verificação TypeScript e build. As consultas de conferência usam somente SELECT. Nenhuma venda de teste enviada ao Protheus.
+
+## Alterações mantidas da versão 0.1.16
 
 - Corrige a primeira abertura em uma máquina sem configuração do Protheus.
 - Permite importar o arquivo `.env` já configurado na máquina principal, antes de iniciar o servidor.

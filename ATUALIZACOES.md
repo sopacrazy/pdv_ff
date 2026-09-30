@@ -1,5 +1,11 @@
 # Atualizações do PDV Fort Fruit
 
+## Conferência das exclusões no Protheus
+
+O servidor confere a SZ4140 na inicialização e a cada cinco minutos, incluindo registros com `D_E_L_E_T_='*'`. A correspondência exige filial, número do bilhete e ID da integração. A conferência percorre até mil registros locais por ciclo, priorizando os menos recentemente conferidos. Em Consultas, **Conferir exclusões** permite antecipar a verificação.
+
+Uma exclusão confirmada marca o registro local como **Excluído no Protheus**, bloqueia reenvio e confirmação manual e retira a venda dos totais e indicadores. Valores, itens e respostas da integração permanecem no histórico; a data registrada indica quando o PDV detectou a exclusão. Registro ausente, correspondência divergente ou falha de conexão não confirma exclusão. Se o mesmo bilhete for restaurado no ERP, o PDV atualiza sua situação sem enviar uma nova venda. Toda a consulta ao Protheus usa somente SELECT.
+
 O desktop consulta as releases públicas de `sopacrazy/pdv_ff` ao abrir, a cada quatro horas e pelo menu **Ajuda → Verificar atualizações agora**. Baixa a versão nova e oferece a instalação ao reiniciar. Finalize ou cancele o cupom aberto antes de fechar o sistema. Bancos, usuários e vendas ficam em `%APPDATA%\react-example\data` e não são substituídos pelo instalador.
 
 A partir de 0.1.15, a configuração do Protheus fica em `%APPDATA%\react-example\config\.env`. O instalador copia o `.env` de uma instalação anterior antes de removê-la, se a configuração externa ainda não existir. Não sobrescreve um arquivo externo existente. Na 0.1.16, a primeira abertura permite importar o `.env` já configurado, transferido localmente da máquina principal. O servidor só inicia depois de validar o arquivo; fechar essa configuração encerra o aplicativo. O pacote publicado não inclui senhas, tokens ou bancos de dados. `PDV_ENV_FILE` permite definir outro arquivo explicitamente.

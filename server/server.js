@@ -7,6 +7,7 @@ import { syncVendedoresProtheus } from './sync-vendedores-protheus.js';
 import { iniciarApi } from './api.js';
 import { processarFilaProtheus } from './fila-protheus.js';
 import { sincronizarCacheBilhetes } from './sync-bilhetes-4sales.js';
+import { conferirBilhetesProtheus } from './conferencia-bilhetes-protheus.js';
 
 const CRON_EXPRESSAO = '*/15 * * * *';
 const CRON_EXPRESSAO_BILHETES = '*/5 * * * *';
@@ -60,6 +61,8 @@ export const servidorPronto = iniciarApi();
 // o Electron recebe servidorPronto e abre o PDV usando somente o SQLite. Falha de VPN/rede mantém o
 // cache local intacto e nunca impede login ou venda offline.
 setImmediate(async () => {
+  try { await conferirBilhetesProtheus(); }
+  catch (erro) { console.error(`[server] Conferência de bilhetes falhou: ${erro.message}`); }
   try {
     await rodarSync('inicialização em segundo plano');
   } catch (erro) {
@@ -84,6 +87,7 @@ cron.schedule(CRON_EXPRESSAO_FILA_PROTHEUS, () => {
   processarFilaProtheus('agendada').catch((erro) => console.error(`[server] Fila agendada falhou: ${erro?.message || erro}`));
 });
 cron.schedule(CRON_EXPRESSAO_BILHETES, () => {
+  conferirBilhetesProtheus().catch((erro) => console.error(`[server] Conferência de bilhetes falhou: ${erro.message}`));
   sincronizarCacheBilhetes().catch((erro) => console.error(`[server] Cache 4Sales falhou: ${erro?.message || erro}`));
 });
 

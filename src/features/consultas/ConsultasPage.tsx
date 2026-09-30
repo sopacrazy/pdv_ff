@@ -55,9 +55,11 @@ const ROTULO_STATUS: Record<'TODOS' | StatusProtheus, string> = {
   CONFERIR: 'Conferir Protheus',
   PREPARANDO: 'Preparando',
   REJEITADO: 'Rejeitado',
+  EXCLUIDO_PROTHEUS: 'Excluído no Protheus',
 };
 
 const StatusBadge = ({ status, atualizadoEm, tipoOperacao }: { status: StatusProtheus; atualizadoEm?: string | null; tipoOperacao: 'PDV' | 'BILHETE' }) => {
+  if (status === 'EXCLUIDO_PROTHEUS') return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-slate-200 text-slate-700"><Trash2 size={12} />Excluído no Protheus</span>;
   const integrado = status === 'INTEGRADO';
   const local = status === 'LOCAL';
   const rejeitado = status === 'REJEITADO';
@@ -93,6 +95,7 @@ export function ConsultasPage() {
   const { usuario, token } = useAuthStore();
   const [vendas, setVendas] = useState<VendaResumo[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [conferindo, setConferindo] = useState(false);
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<VendaDetalhe | null>(null);
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
@@ -126,6 +129,19 @@ export function ConsultasPage() {
     const lista = await vendaService.listarVendasDoDia();
     setVendas(lista);
     setCarregando(false);
+  };
+
+  const conferirProtheus = async () => {
+    if (!token || conferindo) return;
+    setConferindo(true);
+    try {
+      const resultado = await vendaService.conferirProtheus(token);
+      if (resultado.sucesso) {
+        mostrarToast(`Conferência concluída: ${resultado.excluidas || 0} exclusão(ões) e ${resultado.restauradas || 0} restauração(ões).${resultado.naoLocalizadas ? ' Há registros sem correspondência confirmada no ERP.' : ''}`, 'sucesso');
+        await carregar();
+        if (expandidoId) setDetalhe(await vendaService.buscarVenda(expandidoId));
+      } else mostrarToast(resultado.erro || 'Não foi possível conferir o Protheus.', 'erro');
+    } finally { setConferindo(false); }
   };
 
   useEffect(() => {
@@ -171,7 +187,7 @@ export function ConsultasPage() {
   const marcarIntegrado = async (e: React.MouseEvent, venda: VendaResumo) => {
     e.stopPropagation();
     if (!token) return;
-    if (venda.statusProtheus === 'LOCAL' || venda.statusProtheus === 'INTEGRADO') return;
+    if (['LOCAL', 'INTEGRADO', 'EXCLUIDO_PROTHEUS'].includes(venda.statusProtheus)) return;
     // Não existe consulta automática pra saber se um envio "Conferir Protheus" (resultado
     // desconhecido, ex: timeout) realmente chegou lá — por isso pedimos o número do bilhete
     // como confirmação de que alguém checou no Protheus de verdade antes de marcar.
@@ -228,8 +244,9 @@ export function ConsultasPage() {
     );
   });
 
-  const totalDoDia = vendas.reduce((acc, v) => acc + v.total, 0);
-  const ticketMedio = vendas.length > 0 ? Math.round(totalDoDia / vendas.length) : 0;
+  const vendasAtivas = vendas.filter(v => v.statusProtheus !== 'EXCLUIDO_PROTHEUS');
+  const totalDoDia = vendasAtivas.reduce((acc, v) => acc + v.total, 0);
+  const ticketMedio = vendasAtivas.length > 0 ? Math.round(totalDoDia / vendasAtivas.length) : 0;
 
   const formatadorHora = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' });
   const formatadorData = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' });
@@ -259,7 +276,7 @@ export function ConsultasPage() {
             </div>
             <div>
               <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Vendas no dia</div>
-              <div className="text-2xl font-black text-slate-800 tabular-nums">{vendas.length}</div>
+              <div className="text-2xl font-black text-slate-800 tabular-nums">{vendasAtivas.length}</div>
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center gap-4">
@@ -284,6 +301,9 @@ export function ConsultasPage() {
 
 
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <button onClick={conferirProtheus} disabled={conferindo || !token} className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 disabled:opacity-50">
+            <RefreshCw size={16} className={conferindo ? 'animate-spin' : ''} />{conferindo ? 'Conferindo...' : 'Conferir exclusões'}
+          </button>
           <div className="relative flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -303,7 +323,7 @@ export function ConsultasPage() {
           </div>
 
           <div className="flex gap-2 overflow-x-auto">
-            {(['TODOS', 'LOCAL', 'INTEGRADO', 'CONFERIR', 'PREPARANDO'] as const).map((s) => (
+            {(['TODOS', 'LOCAL', 'INTEGRADO', 'CONFERIR', 'PREPARANDO', 'EXCLUIDO_PROTHEUS'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFiltroStatus(s)}

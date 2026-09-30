@@ -78,13 +78,15 @@ export function HomePage() {
     const carregar = async () => {
       const [vendas, resumo] = await Promise.all([vendaService.listarVendasDoDia(), vendaService.resumoSemana()]);
       if (cancelado) return;
-      setVendasHoje(vendas);
+      setVendasHoje(vendas.filter(v => v.statusProtheus !== 'EXCLUIDO_PROTHEUS'));
       setSemana(resumo);
       setCarregando(false);
     };
     carregar();
+    const atualizacao = setInterval(() => { void carregar().catch(() => undefined); }, 30000);
     return () => {
       cancelado = true;
+      clearInterval(atualizacao);
     };
   }, []);
 

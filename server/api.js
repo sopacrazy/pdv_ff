@@ -14,6 +14,7 @@ import { montarIdIntegracao } from './id-integracao.js';
 import { getProtheusCacheDb } from './protheus-cache-db.js';
 import { sincronizarCreditoCliente, sincronizarPrecosTabela } from './sync-bilhetes-4sales.js';
 import { imprimirCupom } from './impressora-termica.js';
+import { conferirBilhetesProtheus } from './conferencia-bilhetes-protheus.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -82,6 +83,8 @@ function paraVendaResumo(linha) {
     editadoEm: linha.editado_em,
     statusProtheus: linha.status_protheus,
     protheusAtualizadoEm: linha.protheus_atualizado_em,
+    protheusConferidoEm: linha.protheus_conferido_em || null,
+    protheusExcluidoEm: linha.protheus_excluido_em || null,
     bilheteProtheus: linha.bilhete_protheus,
     resultadoProtheus: linha.resultado_protheus ? JSON.parse(linha.resultado_protheus) : null,
     valorRecebido: linha.valor_recebido,
@@ -867,7 +870,7 @@ export function iniciarApi() {
       .prepare(
         `SELECT data_local AS data, COUNT(*) AS quantidade, SUM(total) AS total
          FROM vendas
-         WHERE deletado = '' AND tipo_operacao = 'PDV' AND data_local >= ?
+         WHERE deletado = '' AND status_protheus<>'EXCLUIDO_PROTHEUS' AND tipo_operacao = 'PDV' AND data_local >= ?
          GROUP BY data_local`
       )
       .all(dias[0]);
@@ -1011,6 +1014,11 @@ export function iniciarApi() {
     }
   });
 
+  app.post('/api/vendas/conferir-protheus', autenticarMiddleware, async (req, res) => {
+    try { res.json({ sucesso: true, ...await conferirBilhetesProtheus() }); }
+    catch { res.status(503).json({ sucesso: false, erro: 'Não foi possível conferir os bilhetes no Protheus. Os registros locais foram preservados.' }); }
+  });
+
   app.get('/api/vendas', (req, res) => {
     const db = getDb();
     // Sem data explícita na query, mostra o dia "de operação" atual — se a loja adiantou a data
@@ -1133,6 +1141,7 @@ export function iniciarApi() {
     if (!venda) return res.status(404).json({ sucesso: false, erro: 'Venda não encontrada.' });
     if (venda.status_protheus === 'LOCAL') return res.status(409).json({ sucesso: false, erro: 'Esta venda ainda não foi enviada ao Protheus.' });
     if (venda.status_protheus === 'INTEGRADO') return res.status(409).json({ sucesso: false, erro: 'Esta venda já está marcada como integrada.' });
+    if (venda.status_protheus === 'EXCLUIDO_PROTHEUS') return res.status(409).json({ sucesso: false, erro: 'Bilhete excluído no Protheus. Confira a situação no ERP.' });
     const bilhete = typeof req.body?.bilhete === 'string' ? req.body.bilhete.trim() : '';
     if (!bilhete) return res.status(400).json({ sucesso: false, erro: 'Informe o número do bilhete confirmado no Protheus.' });
     db.prepare("UPDATE vendas SET status_protheus = 'INTEGRADO', bilhete_protheus = ? WHERE id = ?").run(bilhete, venda.id);

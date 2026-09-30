@@ -16,7 +16,8 @@ function criarDb() {
       status_protheus TEXT NOT NULL DEFAULT 'LOCAL', valor_recebido INTEGER, troco INTEGER,
       editado_em TEXT, bilhete_protheus TEXT, resultado_protheus TEXT, payload_protheus TEXT,
       protheus_atualizado_em TEXT, id_integracao TEXT, tipo_operacao TEXT NOT NULL DEFAULT 'PDV',
-      vendedor_filial TEXT, vendedor_codigo TEXT, vendedor_nome TEXT, protheus_usr_id TEXT
+      vendedor_filial TEXT, vendedor_codigo TEXT, vendedor_nome TEXT, protheus_usr_id TEXT,
+      protheus_conferido_em TEXT, protheus_excluido_em TEXT, protheus_status_antes_exclusao TEXT
     );
     CREATE TABLE venda_itens (
       id TEXT PRIMARY KEY, venda_id TEXT NOT NULL, codigo_produto TEXT, descricao TEXT,
@@ -97,7 +98,7 @@ async function comCredenciais(fn) {
   const originalPool = sql.ConnectionPool;
   sql.ConnectionPool = class {
     async connect() {}
-    request() { return { input() { return this; }, async query() { return { recordset: [{ codigo: 'BOL', descricao: 'BOLETO' }] }; } }; }
+    request() { return { input() { return this; }, async query(texto) { return { recordset: texto.includes('FROM SZ4140') ? [] : [{ codigo: 'BOL', descricao: 'BOLETO' }] }; } }; }
     async close() {}
   };
   const oldUser = process.env.PROTHEUS_REST_USER;
