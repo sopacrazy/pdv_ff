@@ -9,7 +9,7 @@ import { bilheteService, ClienteBilhete } from '../../services/bilheteService';
 import { vendaService } from '../../services/vendaService';
 import { Produto } from '../../types/produto';
 import { ItemVenda } from '../../types/venda';
-import { formatMoney } from '../../utils/formatters';
+import { formatMoney, formatMoneySegundaUnidade } from '../../utils/formatters';
 import { rotuloFilial } from '../../utils/filiais';
 import { paraPrimeiraUnidade, paraSegundaUnidade, temSegundaUnidade } from '../../utils/unidades';
 import { Toast } from '../../components/Toast';
@@ -78,6 +78,7 @@ export function BilhetePdvPage() {
   const [itens, setItens] = useState<ItemVenda[]>([]);
   const [itemSelecionadoId, setItemSelecionadoId] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
+  const [mensagemBusca, setMensagemBusca] = useState('');
   const [finalizando, setFinalizando] = useState(false);
   const [bloqueios, setBloqueios] = useState<string[]>([]);
   const [menuAberto, setMenuAberto] = useState(false);
@@ -201,25 +202,27 @@ export function BilhetePdvPage() {
     if (!token || !pesquisa) return;
     const requisicao = ++sequenciaBusca.current;
     setBuscando(true);
+    setMensagemBusca('');
     const resultado = await bilheteService.buscarProdutos(cliente, pesquisa, token);
     if (requisicao !== sequenciaBusca.current) return;
     setBuscando(false);
-    if (resultado.erro) mostrarToast(resultado.erro, 'erro');
-    // Sem estoque nem aparece na busca — evita o operador perder tempo tentando um produto que já
-    // sabe que vai ser barrado na hora de adicionar. saldoEstoque null (nunca sincronizado) continua
-    // aparecendo: falta de dado não é o mesmo que falta de estoque.
-    const disponiveis = resultado.produtos.filter((produto) => produto.saldoEstoque == null || produto.saldoEstoque > 0);
-    if (incluirSeUnico && disponiveis.length === 1) {
-      adicionarProduto(disponiveis[0]);
+    if (resultado.erro) {
+      setProdutos([]);
+      setMensagemBusca(resultado.erro);
+      mostrarToast(resultado.erro, 'erro');
       return;
     }
-    setProdutos(disponiveis);
+    // A consulta por palavra-chave mostra todos os resultados com preço, inclusive sem estoque.
+    // A inclusão continua validando o saldo em adicionarProduto.
+    const encontrados = resultado.produtos;
+    if (incluirSeUnico && encontrados.length === 1 && (encontrados[0].saldoEstoque == null || encontrados[0].saldoEstoque > 0)) {
+      adicionarProduto(encontrados[0]);
+      return;
+    }
+    setProdutos(encontrados);
     setProdutoSelecionado(0);
-    if (incluirSeUnico && disponiveis.length === 0) {
-      mostrarToast(
-        resultado.produtos.length > 0 ? `Sem estoque disponível: ${pesquisa}` : `Produto não encontrado: ${pesquisa}`,
-        'erro'
-      );
+    if (!encontrados.length) {
+      setMensagemBusca(`Nenhum produto com preço na tabela ${cliente?.tabelaPreco || '001'} encontrado para “${pesquisa}”.`);
     }
   }, [adicionarProduto, cliente, mostrarToast, token]);
 
@@ -231,6 +234,7 @@ export function BilhetePdvPage() {
     // enquanto o operador já está digitando uma nova consulta.
     sequenciaBusca.current += 1;
     setBuscando(false);
+    setMensagemBusca('');
     setProdutos([]);
     setProdutoSelecionado(0);
     if (!termo) {
@@ -368,13 +372,16 @@ export function BilhetePdvPage() {
         limparBilhete();
       } else if (evento.key === 'Escape') {
         evento.preventDefault();
-        if (produtos.length) setProdutos([]);
+        if (produtos.length || mensagemBusca) {
+          setProdutos([]);
+          setMensagemBusca('');
+        }
         else setMenuAberto(true);
       }
     };
     window.addEventListener('keydown', atalhos);
     return () => window.removeEventListener('keydown', atalhos);
-  }, [bloqueios.length, finalizar, finalizando, limparBilhete, produtos.length, removerSelecionado]);
+  }, [bloqueios.length, finalizar, finalizando, limparBilhete, produtos.length, mensagemBusca, removerSelecionado]);
 
   const handleBuscaKeyDown = (evento: React.KeyboardEvent<HTMLInputElement>) => {
     if (evento.key === 'ArrowDown' && produtos.length) {
@@ -387,10 +394,11 @@ export function BilhetePdvPage() {
       evento.preventDefault();
       if (produtos[produtoSelecionado]) adicionarProduto(produtos[produtoSelecionado]);
       else void procurarProdutos(buscaProduto, !!cliente);
-    } else if (evento.key === 'Escape' && produtos.length) {
+    } else if (evento.key === 'Escape' && (produtos.length || mensagemBusca)) {
       evento.preventDefault();
       evento.stopPropagation();
       setProdutos([]);
+      setMensagemBusca('');
     }
   };
 
@@ -552,14 +560,15 @@ export function BilhetePdvPage() {
               />
             </div>
             {buscando && <span className="bilhete-loading absolute right-10 top-12 text-sm text-slate-500">Buscando...</span>}
-            {produtos.length > 0 && (
+            {(produtos.length > 0 || mensagemBusca) && (
               <div ref={listaProdutos} className="bilhete-product-results absolute left-6 right-6 top-[86px] bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-80 overflow-auto">
+                {mensagemBusca && <p role="status" className="px-4 py-3 text-sm text-slate-600">{mensagemBusca}</p>}
                 {produtos.map((produto, indice) => (
                   <button key={produto.codigo} onMouseEnter={() => setProdutoSelecionado(indice)} onClick={() => adicionarProduto(produto)} className={clsx('w-full flex justify-between items-center px-4 py-3 border-b text-left transition-colors', produtoSelecionado === indice ? 'bg-blue-600 text-white' : 'bg-white hover:bg-blue-50 text-slate-800')}>
                     <span><strong className="text-lg">{produto.descricao}</strong><small className={clsx('block font-mono', produtoSelecionado === indice ? 'text-blue-100' : 'text-slate-500')}>Cód: {produto.codigo}{produto.codigoBarras ? ` · Barras: ${produto.codigoBarras}` : ''} · {produto.unidade}</small></span>
                     <span className="ml-auto flex shrink-0 items-center gap-5 text-right">
                       <span className={clsx('text-sm font-bold tabular-nums', produtoSelecionado === indice ? 'text-blue-100' : produto.saldoEstoque != null && produto.saldoEstoque <= 0 ? 'text-red-600' : 'text-emerald-700')}>
-                        Estoque: {produto.saldoEstoque == null ? '—' : `${formatarQuantidade(produto.saldoEstoque)} ${produto.unidade}`}
+                        {produto.saldoEstoque != null && produto.saldoEstoque <= 0 ? 'Sem estoque · ' : 'Estoque: '}{produto.saldoEstoque == null ? '—' : `${formatarQuantidade(produto.saldoEstoque)} ${produto.unidade}`}
                       </span>
                       <strong className="min-w-28 text-xl tabular-nums">{formatMoney(Math.round(produto.preco * 100))}</strong>
                     </span>
@@ -581,7 +590,7 @@ export function BilhetePdvPage() {
             ) : (
               <table className="bilhete-table w-full text-left border-collapse whitespace-nowrap">
                 <thead className="sticky top-0 bg-slate-100 text-slate-600 text-base uppercase font-bold z-10 shadow-sm border-b border-slate-200">
-                  <tr><th className="p-4 w-16 text-center">Item</th><th className="p-4 w-36">Código</th><th className="p-4">Descrição</th><th className="p-4 w-28 text-right">Qtd</th><th className="p-4 w-16 text-center">UN</th><th className="p-4 w-28 text-right">Qtd 2ª</th><th className="p-4 w-16 text-center">UN 2ª</th><th className="p-4 w-32 text-right">Vl. Unit</th><th className="p-4 w-36 text-right pr-6">Total</th><th className="w-12" /></tr>
+                  <tr><th className="p-4 w-16 text-center">Item</th><th className="p-4 w-36">Código</th><th className="p-4">Descrição</th><th className="p-4 w-28 text-right">Qtd</th><th className="p-4 w-16 text-center">UN</th><th className="p-4 w-28 text-right">Qtd 2ª</th><th className="p-4 w-16 text-center">UN 2ª</th><th className="p-4 w-32 text-right">Vl. Unit</th><th className="p-4 w-32 text-right">Preço 2ª un.</th><th className="p-4 w-36 text-right pr-6">Total</th><th className="w-12" /></tr>
                 </thead>
                 <tbody className="font-mono text-2xl text-slate-800">
                   {itens.map((item, indice) => (
@@ -590,7 +599,10 @@ export function BilhetePdvPage() {
                       <td data-unidade={item.produto.unidade} className="p-1 text-right"><CampoQuantidade valor={item.quantidade} onConfirmar={(valor) => alterarQuantidade(item.id, valor)} title={`Quantidade em ${item.produto.unidade}`} aoConfirmarComEnter={() => inputProduto.current?.focus()} /></td>
                       <td className="p-4 text-center text-slate-400">{item.produto.unidade}</td>
                       <td data-unidade={item.produto.segundaUnidade} className="p-1 text-right">{temSegundaUnidade(item.produto) ? <CampoQuantidade valor={paraSegundaUnidade(item.produto, item.quantidade) ?? 0} onConfirmar={(valor) => alterarQuantidadeSegundaUnidade(item.id, valor)} title={`Quantidade em ${item.produto.segundaUnidade}`} aoConfirmarComEnter={() => inputProduto.current?.focus()} /> : <span title="Produto sem segunda unidade ou fator de conversão cadastrado">Sem 2ª un.</span>}</td>
-                      <td className="p-4 text-center text-slate-400">{temSegundaUnidade(item.produto) ? item.produto.segundaUnidade : <span className="text-slate-300">—</span>}</td><td data-label="Valor unitário" className="p-4 text-right tabular-nums font-bold">{formatMoney(item.valorUnitario)}</td><td data-label="Total do item" className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
+                      <td className="p-4 text-center text-slate-400">{temSegundaUnidade(item.produto) ? item.produto.segundaUnidade : <span className="text-slate-300">—</span>}</td>
+                      <td data-label="Valor unitário" className="p-4 text-right tabular-nums font-bold">{formatMoney(item.valorUnitario)}</td>
+                      <td data-label={`Preço 2ª un.${temSegundaUnidade(item.produto) ? ` (${item.produto.segundaUnidade})` : ''}`} title={temSegundaUnidade(item.produto) ? `Preço por ${item.produto.segundaUnidade} na tabela ${cliente?.tabelaPreco}` : 'Produto sem segunda unidade'} className="p-4 text-right tabular-nums font-bold">{temSegundaUnidade(item.produto) && item.produto.precoSegundaUnidade != null ? formatMoneySegundaUnidade(item.produto.precoSegundaUnidade) : <span className="text-slate-400">—</span>}</td>
+                      <td data-label="Total do item" className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
                       <td className="pr-3"><button onClick={(evento) => { evento.stopPropagation(); setItens((atuais) => atuais.filter((atual) => atual.id !== item.id)); }} className="text-red-500 hover:text-red-700" aria-label={`Remover ${item.produto.descricao}`} title="Remover item"><X size={18} /></button></td>
                     </tr>
                   ))}

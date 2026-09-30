@@ -1,6 +1,8 @@
 import './env.js';
+import { resolverUrls4Sales } from './protheus-4sales-config.js';
 
-export const URL_TESTE_4SALES = 'http://177.67.71.212:9990/rest/4SALFORTFRUITORDERS';
+// Nome mantido por compatibilidade. O destino efetivo é sempre o ambiente do .env.
+export const URL_TESTE_4SALES = resolverUrls4Sales().pedidos;
 
 // Falha de rede/timeout (provável sem internet ou Protheus fora do ar) vs. erro de negócio já respondido pelo servidor.
 export function pareceFalhaDeRede(erro) {
@@ -27,7 +29,7 @@ export function prepararTeste4Sales(documento) {
   const body = documento.body;
   const headers = documento.headers;
   if (documento.url !== URL_TESTE_4SALES || documento.method?.toLowerCase() !== 'post') {
-    throw new Error('Este teste aceita somente POST no 4SALFORTFRUITORDERS da base teste.');
+    throw new Error('Aceito somente POST no 4SALFORTFRUITORDERS do ambiente configurado no servidor.');
   }
   if (!body || typeof body !== 'object' || Array.isArray(body) || !headers) throw new Error('O arquivo deve conter body e headers.');
   if (body.operation?.id !== '2') throw new Error('O teste exige operation.id = "2" (Bilhete).');
@@ -52,9 +54,8 @@ export function prepararTeste4Sales(documento) {
 }
 
 export async function enviarTeste4Sales(preparado, { timeoutMs = 150000, credenciaisProtheus } = {}) {
-  // Login do operador (ver credenciais-protheus.js) tem prioridade — é dele que o Protheus deriva o
-  // vendedor do bilhete (RFATA03.PRW ignora o campo "seller" do JSON e usa quem está autenticado na
-  // chamada). O usuário/senha fixos do .env ficam só como fallback pra chamadas sem operador definido.
+  // A fila passa somente a conta técnica do servidor. O parâmetro permite testes isolados;
+  // nunca é recebido do navegador. O vendedor comercial é informado no body.seller.
   const usuario = credenciaisProtheus?.usuario || process.env.PROTHEUS_REST_USER;
   const senha = credenciaisProtheus?.senha || process.env.PROTHEUS_REST_PASSWORD;
   if (!usuario || !senha) throw new Error('Credenciais REST não configuradas no servidor do PDV.');

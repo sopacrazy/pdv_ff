@@ -32,6 +32,7 @@ if (!ehInstanciaUnica) {
 // (%APPDATA%/pdv-fort-fruit ou similar). server/db.js lê PDV_DB_DIR na hora que é importado, então
 // isso tem que ser setado ANTES do import() do servidor lá embaixo.
 process.env.PDV_DB_DIR = path.join(app.getPath('userData'), 'data');
+process.env.PDV_CONFIG_DIR = path.join(app.getPath('userData'), 'config');
 process.env.API_PORT = String(PORTA);
 
 // O app empacotado não tem terminal — sem isso, todo console.log/warn/error do servidor embutido
@@ -71,45 +72,18 @@ configurarLogParaArquivo();
 let autoUpdateDisponivel = false;
 let checagemManualEmAndamento = false;
 
-// Token de acesso ao GitHub pra baixar releases do repositório privado sopacrazy/pdv_ff — sem ele
-// o electron-updater não consegue nem listar nem baixar os assets de um repo privado, mesmo sendo
-// só leitura. Não é commitado: build-resources/gh-token.txt é gitignored, e o electron-builder
-// copia esse arquivo pra dentro do app empacotado (extraResources, ver package.json). Em dev
-// (rodando direto da pasta do projeto, sem empacotar), cai no fallback abaixo ou na variável de
-// ambiente GH_TOKEN.
-function lerTokenGithub() {
-  const candidatos = [
-    path.join(process.resourcesPath || '', 'gh-token.txt'),
-    path.join(__dirname, '..', 'build-resources', 'gh-token.txt'),
-  ];
-  for (const candidato of candidatos) {
-    try {
-      const conteudo = fs.readFileSync(candidato, 'utf-8').trim();
-      if (conteudo) return conteudo;
-    } catch {
-      // arquivo não existe nesse candidato — tenta o próximo
-    }
-  }
-  return process.env.GH_TOKEN || '';
-}
-
 function configurarAutoUpdate() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
-  const token = lerTokenGithub();
-  if (!token) {
-    console.warn('[electron] Nenhum token do GitHub encontrado — auto-update desativado (repo é privado).');
-    return;
-  }
+  // O repositório é público: downloads não precisam de credenciais no instalador.
   autoUpdateDisponivel = true;
 
   autoUpdater.setFeedURL({
     provider: 'github',
     owner: 'sopacrazy',
     repo: 'pdv_ff',
-    private: true,
-    token,
+    private: false,
   });
 
   // As mensagens abaixo só viram diálogo quando a checagem foi disparada pelo menu "Verificar
@@ -179,7 +153,7 @@ function verificarAtualizacoesManualmente() {
     dialog.showMessageBox(janelaPrincipal, {
       type: 'warning',
       title: 'Verificar atualizações',
-      message: 'Auto-update não está configurado nesta instalação (token do GitHub ausente).',
+      message: 'O serviço de atualização ainda não está disponível. Aguarde a inicialização do PDV.',
     });
     return;
   }

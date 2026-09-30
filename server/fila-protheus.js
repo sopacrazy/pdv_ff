@@ -1,8 +1,7 @@
 import { getDb } from './db.js';
 import { prepararVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
 import { pareceFalhaDeRede, descreverErro } from './protheus-4sales-test.js';
-import { decifrarSenhaProtheus } from './credenciais-protheus.js';
-import { consultarVendedorDoUsuario } from './protheus-usuario.js';
+import { validarContaRestPrincipal, credenciaisContaRestPrincipal } from './conta-rest-principal.js';
 
 // Reenviar a mesma venda (mesmo idVendaPdv) pro Protheus é seguro — confirmado que não duplica
 // bilhete quando já existe um pra aquele id. Isso permite reprocessar automaticamente também
@@ -15,7 +14,20 @@ const RETRY_STATUS_INCERTO_MS = 200000;
 // em Consultas) quanto pelo processador de fila (retentativa automática em segundo plano). A
 // reserva via UPDATE condicional garante que chamadas concorrentes (ex: um admin clicando "Enviar"
 // bem no instante em que a fila também tenta) nunca enviem a mesma venda duas vezes ao mesmo tempo.
-export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
+let envioEmCurso = Promise.resolve();
+const agendados = new Map();
+
+export function enviarVendaAoProtheus(db, vendaId, opcoes) {
+  let vendas = agendados.get(db);
+  if (!vendas) { vendas = new Set(); agendados.set(db, vendas); }
+  if (vendas.has(vendaId)) return Promise.resolve({ sucesso: false, http: 409, erro: 'Envio já em andamento ou aguardando na fila.' });
+  vendas.add(vendaId);
+  const tarefa = envioEmCurso.then(() => enviarVendaSerializada(db, vendaId, opcoes));
+  envioEmCurso = tarefa.catch(() => undefined);
+  return tarefa.finally(() => { vendas.delete(vendaId); if (!vendas.size) agendados.delete(db); });
+}
+
+async function enviarVendaSerializada(db, vendaId, opcoes) {
   const venda = db.prepare("SELECT * FROM vendas WHERE id = ? AND deletado = ''").get(vendaId);
   if (!venda) return { sucesso: false, http: 404, erro: 'Venda não encontrada.' };
   if (venda.status_protheus === 'INTEGRADO') return { sucesso: false, http: 409, erro: 'Venda já integrada ao Protheus.' };
@@ -38,43 +50,41 @@ export async function enviarVendaAoProtheus(db, vendaId, opcoes) {
     const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(venda.id);
     // Vendas novas guardam a chave estável do usuário autenticado. A busca por nome existe apenas
     // para vendas antigas, criadas antes da coluna usuario_id; nomes podem mudar ou se repetir.
-    let vendedor = venda.usuario_id
-      ? db.prepare('SELECT * FROM usuarios WHERE id = ?').get(venda.usuario_id)
+    let vendedor = venda.vendedor_codigo && venda.vendedor_filial
+      ? {}
+      : venda.usuario_id ? db.prepare(`SELECT u.*, COALESCE(pu.id_protheus, pv.usuario_codigo) AS protheus_usr_id
+          FROM usuarios u LEFT JOIN protheus_usuarios pu ON pu.codigo=u.protheus_usr_codigo
+          LEFT JOIN protheus_vendedores pv ON pv.filial=u.protheus_vend_filial AND pv.codigo=u.protheus_vend_codigo
+          WHERE u.id=?`).get(venda.usuario_id)
       : null;
     if (!vendedor) {
       const vendedoresLegados = db.prepare('SELECT * FROM usuarios WHERE nome = ?').all(venda.operador);
       if (vendedoresLegados.length !== 1) throw new Error('Operador da venda não identificado de forma única. Confira Usuários.');
       vendedor = vendedoresLegados[0];
     }
-    // O Protheus deriva o vendedor do bilhete de quem está autenticado na chamada REST, não do campo
-    // "seller" do JSON (RFATA03.PRW sobrescreve Z4_VEND com o vendedor do usuário logado) — por isso
-    // cada operador precisa do próprio login Protheus, não só do vínculo com o vendedor (SA3).
-    if (!vendedor.protheus_usr_codigo || !vendedor.protheus_usr_senha_cifrada) {
-      throw new Error('Vincule o login Protheus (usuário e senha) do operador em Usuários antes de enviar.');
-    }
-    credenciaisProtheus = { usuario: vendedor.protheus_usr_codigo, senha: decifrarSenhaProtheus(vendedor.protheus_usr_senha_cifrada) };
-    // Não confia no vendedor salvo na tela: pergunta ao próprio Protheus qual SA3 está ligada ao
-    // login do Basic Auth. Assim, seller no JSON e o vendedor que RFATA03 deriva de __cUserID são
-    // sempre o mesmo. É uma consulta GET, sem alteração de cadastro.
-    const vendedorRest = await consultarVendedorDoUsuario({
-      ...credenciaisProtheus,
-      filial: '01',
-      timeoutMs: opcoes?.timeoutMs,
-    });
+    // Snapshot da emissão. A autenticação técnica nunca define o vendedor comercial.
     vendedor = {
       ...vendedor,
-      protheus_usr_id: vendedorRest.usuarioId,
-      protheus_vend_filial: vendedorRest.filial,
-      protheus_vend_codigo: vendedorRest.codigo,
-      protheus_vend_nome: vendedorRest.nome,
+      protheus_usr_id: venda.protheus_usr_id || vendedor.protheus_usr_id,
+      protheus_vend_filial: venda.vendedor_filial || vendedor.protheus_vend_filial,
+      protheus_vend_codigo: venda.vendedor_codigo || vendedor.protheus_vend_codigo,
+      protheus_vend_nome: venda.vendedor_nome ?? vendedor.protheus_vend_nome,
     };
+    if (!vendedor.protheus_vend_codigo || vendedor.protheus_vend_filial !== '01') throw new Error('Vendedor da venda sem vínculo válido na filial 01. Confira Usuários.');
+    await validarContaRestPrincipal({ timeoutMs: opcoes?.timeoutMs });
+    credenciaisProtheus = credenciaisContaRestPrincipal();
     // Uma venda que já chegou a ser preparada deve repetir exatamente o mesmo `_id`. Isso mantém
     // os UUIDs das tentativas anteriores e impede duplicidade durante a transição para o novo
     // identificador legível (cupom-caixa-usuário-data).
     let idIntegracaoAnterior = venda.id_integracao || null;
     if (venda.payload_protheus) {
       try {
-        idIntegracaoAnterior = JSON.parse(venda.payload_protheus)?.body?._id || null;
+        const anterior = JSON.parse(venda.payload_protheus)?.body;
+        idIntegracaoAnterior = anterior?._id || idIntegracaoAnterior;
+        if (anterior?.seller?.id) {
+          vendedor.protheus_vend_codigo = anterior.seller.id;
+          vendedor.protheus_vend_nome = anterior.seller.name || '';
+        }
       } catch {
         // Payload legado inválido não impede uma venda que nunca chegou a ser enviada.
       }

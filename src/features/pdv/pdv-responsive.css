@@ -4,6 +4,7 @@
    o desktop maximizado padrão. Mesma técnica usada no Bilhete: painel de totais encolhe com
    clamp(), e abaixo de 1399px a tabela vira cards empilhados em vez de colunas cortando. */
 .pdv-summary { width: clamp(280px, 26vw, 420px); }
+.pdv-item-code { display: none; }
 
 @media (max-width: 1399px) {
   .pdv-header > div:nth-child(2) { font-size: 18px; padding: 8px 12px; letter-spacing: .08em; }

@@ -205,9 +205,8 @@ export function getDb() {
   garantirColuna(instancia, 'venda_itens', 'unidade', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_usr_codigo', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_usr_nome', 'TEXT');
-  // Senha do login Protheus (REST) do operador, cifrada (ver credenciais-protheus.js) — usada na
-  // chamada ao 4Sales pra o bilhete sair com o vendedor certo (RFATA03.PRW deriva Z4_VEND de quem
-  // está autenticado na chamada, não do campo "seller" do JSON).
+  // Senhas individuais antigas: coluna preservada por compatibilidade. A integração atual usa
+  // exclusivamente PROTHEUS_REST_USER/PASSWORD do servidor e seller no JSON.
   garantirColuna(instancia, 'usuarios', 'protheus_usr_senha_cifrada', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_filial', 'TEXT');
   garantirColuna(instancia, 'usuarios', 'protheus_vend_codigo', 'TEXT');
@@ -264,6 +263,25 @@ export function getDb() {
     // bilhete no formato Protheus (RFATR21.PRW "Modelo 1").
     garantirColuna(instancia, 'venda_itens', 'unidade2', 'TEXT');
     garantirColuna(instancia, 'venda_itens', 'quantidade2', 'REAL');
+  });
+
+  aplicarMigracao(instancia, 6, 'Vendedor e usuário Protheus no momento da venda', () => {
+    garantirColuna(instancia, 'vendas', 'vendedor_filial', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'vendedor_codigo', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'vendedor_nome', 'TEXT');
+    garantirColuna(instancia, 'vendas', 'protheus_usr_id', 'TEXT');
+    const vendas = instancia.prepare(`SELECT v.*, u.protheus_vend_filial, u.protheus_vend_codigo,
+      u.protheus_vend_nome, COALESCE(pu.id_protheus,pv.usuario_codigo) AS usuario_protheus_id
+      FROM vendas v LEFT JOIN usuarios u ON u.id=v.usuario_id
+      LEFT JOIN protheus_usuarios pu ON pu.codigo=u.protheus_usr_codigo
+      LEFT JOIN protheus_vendedores pv ON pv.filial=u.protheus_vend_filial AND pv.codigo=u.protheus_vend_codigo`).all();
+    const gravar = instancia.prepare('UPDATE vendas SET vendedor_filial=?, vendedor_codigo=?, vendedor_nome=?, protheus_usr_id=? WHERE id=?');
+    for (const venda of vendas) {
+      let anterior;
+      try { anterior = JSON.parse(venda.payload_protheus || 'null')?.body?.seller; } catch { /* payload legado */ }
+      gravar.run(venda.protheus_vend_filial || (anterior?.id ? '01' : null), anterior?.id || venda.protheus_vend_codigo || null,
+        anterior?.name ?? venda.protheus_vend_nome ?? null, venda.usuario_protheus_id || null, venda.id);
+    }
   });
 
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.

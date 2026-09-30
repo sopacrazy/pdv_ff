@@ -7,8 +7,7 @@ export function paraUsuarioFrontend(linha) {
   const prontoParaVender = !!(
     linha.protheus_usr_codigo &&
     linha.protheus_vend_filial &&
-    linha.protheus_vend_codigo &&
-    protheusSenhaDefinida
+    linha.protheus_vend_codigo
   );
   return {
     id: linha.id,

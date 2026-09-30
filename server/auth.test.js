@@ -16,14 +16,14 @@ const usuarioBase = {
   protheus_vend_nome: 'VENDEDOR',
 };
 
-test('libera venda somente quando vínculo e senha Protheus estão completos', () => {
+test('libera venda com vínculo de vendedor sem exigir senha REST individual', () => {
   assert.equal(
     paraUsuarioFrontend({ ...usuarioBase, protheus_usr_senha_cifrada: 'cifrada' }).prontoParaVender,
     true
   );
   assert.equal(
     paraUsuarioFrontend({ ...usuarioBase, protheus_usr_senha_cifrada: null }).prontoParaVender,
-    false
+    true
   );
   assert.equal(
     paraUsuarioFrontend({ ...usuarioBase, protheus_usr_senha_cifrada: 'cifrada', protheus_vend_codigo: null })

@@ -9,8 +9,7 @@ import { getDb } from './db.js';
 import { autenticar, encerrarSessao, paraUsuarioFrontend, autenticarMiddleware, exigirAdminMiddleware } from './auth.js';
 import { enviarVendaAoProtheus } from './fila-protheus.js';
 import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES, pareceFalhaDeRede } from './protheus-4sales-test.js';
-import { cifrarSenhaProtheus, decifrarSenhaProtheus } from './credenciais-protheus.js';
-import { consultarVendedorDoUsuario } from './protheus-usuario.js';
+import { validarContaRestPrincipal, credenciaisContaRestPrincipal } from './conta-rest-principal.js';
 import { montarIdIntegracao } from './id-integracao.js';
 import { getProtheusCacheDb } from './protheus-cache-db.js';
 import { sincronizarCreditoCliente, sincronizarPrecosTabela } from './sync-bilhetes-4sales.js';
@@ -50,6 +49,7 @@ function paraProdutoFrontend(linha) {
     fatorConversao: linha.fator_conversao ?? null,
     tipoConversao: linha.tipo_conversao || null,
     preco: linha.preco,
+    precoSegundaUnidade: linha.preco_segunda_unidade ?? linha.preco_kg ?? null,
     codigoBarras: linha.codigo_barras || '',
     grupo: '',
     saldoEstoque: linha.saldo_estoque == null ? null : Number(linha.saldo_estoque),
@@ -380,7 +380,7 @@ export function iniciarApi() {
   });
 
   app.post('/api/usuarios', autenticarMiddleware, exigirAdminMiddleware, (req, res) => {
-    const { nome, login, senha, papel, protheusCodigo, protheusNome, protheusSenha, protheusVendFilial, protheusVendCodigo, protheusVendNome } =
+    const { nome, login, senha, papel, protheusCodigo, protheusNome, protheusVendFilial, protheusVendCodigo, protheusVendNome } =
       req.body || {};
     if (!nome || !login || !senha) {
       res.status(400).json({ erro: 'Nome, login e senha são obrigatórios.' });
@@ -420,7 +420,7 @@ export function iniciarApi() {
       new Date().toISOString(),
       protheusCodigo || null,
       protheusNome || null,
-      protheusSenha ? cifrarSenhaProtheus(protheusSenha) : null,
+      null,
       protheusVendFilial || null,
       protheusVendCodigo || null,
       protheusVendNome || null
@@ -438,7 +438,7 @@ export function iniciarApi() {
       return;
     }
 
-    const { nome, papel, ativo, senha, protheusCodigo, protheusNome, protheusSenha, protheusVendFilial, protheusVendCodigo, protheusVendNome } =
+    const { nome, papel, ativo, senha, protheusCodigo, protheusNome, protheusVendFilial, protheusVendCodigo, protheusVendNome } =
       req.body || {};
 
     if (typeof ativo === 'boolean' && !ativo && usuario.id === req.usuario.id) {
@@ -454,13 +454,9 @@ export function iniciarApi() {
     const protheusCodigoFinal = protheusCodigo !== undefined ? protheusCodigo || null : usuario.protheus_usr_codigo;
     const filialFinal = protheusVendFilial !== undefined ? protheusVendFilial || null : usuario.protheus_vend_filial;
     const vendedorFinal = protheusVendCodigo !== undefined ? protheusVendCodigo || null : usuario.protheus_vend_codigo;
-    const manteveMesmoUsuarioProtheus = protheusCodigoFinal === usuario.protheus_usr_codigo;
-    const senhaProtheusFinal = protheusSenha !== undefined
-      ? (protheusSenha ? cifrarSenhaProtheus(protheusSenha) : null)
-      : manteveMesmoUsuarioProtheus
-        ? usuario.protheus_usr_senha_cifrada
-        : null;
-    const alterouVinculo = [protheusCodigo, protheusNome, protheusSenha, protheusVendFilial, protheusVendCodigo, protheusVendNome]
+    // Credenciais individuais antigas permanecem armazenadas, mas não são usadas pela integração.
+    const senhaProtheusFinal = usuario.protheus_usr_senha_cifrada;
+    const alterouVinculo = [protheusCodigo, protheusNome, protheusVendFilial, protheusVendCodigo, protheusVendNome]
       .some((valor) => valor !== undefined);
     const erroVinculo = alterouVinculo ? validarVinculoProtheus(db, {
       protheusCodigo: protheusCodigoFinal,
@@ -606,62 +602,29 @@ export function iniciarApi() {
     res.json({ sucesso: true });
   });
 
-  app.post('/api/minha-conta/protheus', autenticarMiddleware, async (req, res) => {
-    const protheusSenha = String(req.body?.protheusSenha || '');
-    if (!protheusSenha) return res.status(400).json({ erro: 'Informe sua senha do Protheus.' });
-
-    const db = getDb();
-    const usuario = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(req.usuario.id);
-    if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado.' });
-    if (!usuario.protheus_usr_codigo || !usuario.protheus_vend_filial || !usuario.protheus_vend_codigo) {
-      return res.status(422).json({ erro: 'O administrador ainda não vinculou seu usuário e vendedor do Protheus.' });
-    }
-
-    try {
-      const vendedor = await consultarVendedorDoUsuario({
-        usuario: usuario.protheus_usr_codigo,
-        senha: protheusSenha,
-        filial: usuario.protheus_vend_filial,
-      });
-      if (vendedor.codigo !== usuario.protheus_vend_codigo || vendedor.filial !== usuario.protheus_vend_filial) {
-        return res.status(422).json({
-          erro: `O Protheus vinculou esta conta ao vendedor ${vendedor.codigo} — ${vendedor.nome}, diferente do vendedor cadastrado no PDV. Procure o administrador.`,
-        });
-      }
-
-      db.prepare(
-        'UPDATE usuarios SET protheus_usr_senha_cifrada = ?, protheus_vend_nome = ? WHERE id = ?'
-      ).run(cifrarSenhaProtheus(protheusSenha), vendedor.nome || usuario.protheus_vend_nome, usuario.id);
-      const atualizado = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(usuario.id);
-      res.json({ sucesso: true, usuario: paraUsuarioFrontend(atualizado) });
-    } catch (erro) {
-      res.status(422).json({
-        erro: erro instanceof Error ? erro.message : 'Não foi possível validar sua conta no Protheus.',
-      });
-    }
+  // Clientes antigos recebem uma orientação explícita; nenhuma senha individual é usada.
+  app.post('/api/minha-conta/protheus', autenticarMiddleware, (req, res) => {
+    res.status(410).json({ erro: 'A integração usa a conta REST principal do servidor. Não é necessário cadastrar sua senha do Protheus.' });
   });
 
-  // Confirma o vínculo usando a fonte oficial do próprio REST. No cadastro novo recebe a senha
-  // digitada; na edição pode reutilizar a credencial cifrada já salva sem devolvê-la ao navegador.
-  app.post('/api/protheus/vendedor-do-usuario', autenticarMiddleware, exigirAdminMiddleware, async (req, res) => {
+  app.post('/api/protheus/vendedor-do-usuario', autenticarMiddleware, exigirAdminMiddleware, (req, res) => {
+    const db = getDb();
+    const codigo = String(req.body?.protheusCodigo || '').trim();
+    const usuario = db.prepare('SELECT id_protheus FROM protheus_usuarios WHERE codigo=?').get(codigo);
+    if (!usuario?.id_protheus) return res.status(422).json({ erro: 'Usuário Protheus não encontrado no cadastro sincronizado.' });
+    const vendedores = db.prepare("SELECT filial, codigo, nome, usuario_codigo AS usuarioId FROM protheus_vendedores WHERE filial='01' AND usuario_codigo=?").all(usuario.id_protheus);
+    if (vendedores.length !== 1) return res.status(422).json({ erro: vendedores.length ? 'Mais de um vendedor vinculado na filial 01. Confira o cadastro SA3.' : 'Nenhum vendedor vinculado na filial 01. Confira o cadastro SA3 e sincronize.' });
+    res.json({ sucesso: true, vendedor: vendedores[0] });
+  });
+
+  app.get('/api/protheus/integracao', autenticarMiddleware, exigirAdminMiddleware, async (req, res) => {
     try {
-      const db = getDb();
-      const usuarioPdvId = String(req.body?.usuarioPdvId || '').trim();
-      const usuarioSalvo = usuarioPdvId ? db.prepare('SELECT * FROM usuarios WHERE id = ?').get(usuarioPdvId) : null;
-      if (usuarioPdvId && !usuarioSalvo) return res.status(404).json({ erro: 'Usuário do PDV não encontrado.' });
-
-      const usuario = String(req.body?.protheusCodigo || usuarioSalvo?.protheus_usr_codigo || '').trim();
-      const senhaInformada = typeof req.body?.protheusSenha === 'string' ? req.body.protheusSenha : '';
-      const podeUsarSenhaSalva = usuarioSalvo && usuario === usuarioSalvo.protheus_usr_codigo;
-      const senha = senhaInformada || (podeUsarSenhaSalva && usuarioSalvo.protheus_usr_senha_cifrada
-        ? decifrarSenhaProtheus(usuarioSalvo.protheus_usr_senha_cifrada)
-        : '');
-      if (!usuario || !senha) return res.status(400).json({ erro: 'Selecione o usuário Protheus e informe a senha REST.' });
-
-      const vendedor = await consultarVendedorDoUsuario({ usuario, senha, filial: '01' });
-      res.json({ sucesso: true, vendedor });
+      const conta = await validarContaRestPrincipal({ timeoutMs: 15000 });
+      res.json({ sucesso: true, ...conta });
     } catch (erro) {
-      res.status(422).json({ erro: erro instanceof Error ? erro.message : 'Não foi possível consultar o vínculo no Protheus.' });
+      let usuario = '';
+      try { usuario = credenciaisContaRestPrincipal().usuario; } catch { /* configuração incompleta */ }
+      res.status(422).json({ sucesso: false, usuario, erro: erro.message });
     }
   });
 
@@ -801,15 +764,17 @@ export function iniciarApi() {
             ORDER BY CASE WHEN descricao LIKE ? COLLATE NOCASE THEN 0 ELSE 1 END, descricao
             LIMIT 50
           `).all(`%${termo}%`, `%${termo}%`, `${termo}%`);
-      const buscarPreco = cache.prepare('SELECT preco FROM precos WHERE tabela=? AND produto=? AND ativo=1');
+      const buscarPreco = cache.prepare('SELECT preco,preco_segunda_unidade FROM precos WHERE tabela=? AND produto=? AND ativo=1');
       const buscarDadosLocais = dbLocal.prepare('SELECT codigo_barras, segunda_unidade, fator_conversao, tipo_conversao FROM produtos WHERE codigo=?');
       res.json(produtos.map((produto) => {
-        const preco = buscarPreco.get(tabelaConsulta, produto.codigo)?.preco;
+        const dadosPreco = buscarPreco.get(tabelaConsulta, produto.codigo);
+        const preco = dadosPreco?.preco;
         if (!(preco > 0)) return null;
         const dadosLocais = buscarDadosLocais.get(produto.codigo) || {};
         return paraProdutoFrontend({
           ...produto,
           preco,
+          preco_segunda_unidade: dadosPreco?.preco_segunda_unidade ?? null,
           codigo_barras: dadosLocais.codigo_barras || produto.codigo_barras || '',
           segunda_unidade: dadosLocais.segunda_unidade || produto.segunda_unidade || null,
           fator_conversao: dadosLocais.fator_conversao || produto.fator_conversao || null,
@@ -920,9 +885,15 @@ export function iniciarApi() {
   app.post('/api/vendas', autenticarMiddleware, (req, res) => {
     if (!req.usuario.prontoParaVender) {
       return res.status(403).json({
-        erro: 'Sua conta ainda não está pronta para vender. Acesse Minha conta e valide sua senha do Protheus.',
+        erro: 'Sua conta ainda não está pronta para vender. Peça ao administrador para vincular seu usuário e vendedor do Protheus.',
       });
     }
+    const erroVinculoVenda = validarVinculoProtheus(getDb(), {
+      protheusCodigo: req.usuario.protheusCodigo,
+      protheusVendFilial: req.usuario.protheusVendFilial,
+      protheusVendCodigo: req.usuario.protheusVendCodigo,
+    });
+    if (erroVinculoVenda) return res.status(422).json({ erro: erroVinculoVenda });
     const venda = req.body;
 
     if (!venda || !Array.isArray(venda.itens) || venda.itens.length === 0) {
@@ -955,8 +926,8 @@ export function iniciarApi() {
     const dataLocal = dataOperacao || dataLocalYYYYMMDD(agora);
 
     const inserirVenda = db.prepare(`
-      INSERT INTO vendas (id, id_integracao, numero_cupom, loja, caixa, operador, usuario_id, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local, valor_recebido, troco, tipo_operacao, cliente_codigo, cliente_loja, tabela_preco)
-      VALUES (@id, @id_integracao, @numero_cupom, @loja, @caixa, @operador, @usuario_id, @cliente_nome, @cliente_cpf, @subtotal, @desconto, @total, @forma_pagamento, @criado_em, @data_local, @valor_recebido, @troco, @tipo_operacao, @cliente_codigo, @cliente_loja, @tabela_preco)
+      INSERT INTO vendas (id, id_integracao, numero_cupom, loja, caixa, operador, usuario_id, cliente_nome, cliente_cpf, subtotal, desconto, total, forma_pagamento, criado_em, data_local, valor_recebido, troco, tipo_operacao, cliente_codigo, cliente_loja, tabela_preco, vendedor_filial, vendedor_codigo, vendedor_nome, protheus_usr_id)
+      VALUES (@id, @id_integracao, @numero_cupom, @loja, @caixa, @operador, @usuario_id, @cliente_nome, @cliente_cpf, @subtotal, @desconto, @total, @forma_pagamento, @criado_em, @data_local, @valor_recebido, @troco, @tipo_operacao, @cliente_codigo, @cliente_loja, @tabela_preco, @vendedor_filial, @vendedor_codigo, @vendedor_nome, @protheus_usr_id)
     `);
 
     const inserirItem = db.prepare(`
@@ -994,6 +965,10 @@ export function iniciarApi() {
         caixa: venda.caixa || '',
         operador: req.usuario.nome,
         usuario_id: req.usuario.id,
+        vendedor_filial: req.usuario.protheusVendFilial,
+        vendedor_codigo: req.usuario.protheusVendCodigo,
+        vendedor_nome: req.usuario.protheusVendNome,
+        protheus_usr_id: usuarioProtheus?.id_protheus || null,
         cliente_nome: venda.cliente?.nome || null,
         cliente_cpf: venda.cliente?.cpf || null,
         subtotal: venda.subtotal || 0,
@@ -1073,8 +1048,8 @@ export function iniciarApi() {
         clienteRg: textoCadastro('estadualregistration'),
         clienteTelefone: [textoCadastro('ddd'), textoCadastro('phone')].filter(Boolean).join(' - '),
         condicaoDescricao: condicao?.descricao || '',
-        vendedorCodigo: vendedor?.protheus_vend_codigo || '',
-        vendedorNome: vendedor?.protheus_vend_nome || '',
+        vendedorCodigo: venda.vendedor_codigo || vendedor?.protheus_vend_codigo || '',
+        vendedorNome: venda.vendedor_nome ?? vendedor?.protheus_vend_nome ?? '',
       },
       itens: itens.map((item) => ({
         codigo: item.codigo_produto,

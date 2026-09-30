@@ -121,6 +121,7 @@ export function getProtheusCacheDb() {
   garantirColunaCache(instancia, 'produtos_bilhete', 'saldo_estoque', 'REAL');
   garantirColunaCache(instancia, 'produtos_bilhete', 'estoque_reservado', 'REAL');
   garantirColunaCache(instancia, 'produtos_bilhete', 'estoque_atualizado_em', 'TEXT');
+  garantirColunaCache(instancia, 'precos', 'preco_segunda_unidade', 'REAL');
   console.log(`[protheus-cache] Banco separado: ${PROTHEUS_CACHE_PATH}`);
   return instancia;
 }

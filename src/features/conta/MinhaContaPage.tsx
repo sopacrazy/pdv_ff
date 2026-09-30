@@ -10,14 +10,12 @@ const inputCls =
   'w-full mt-1.5 bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-400 transition-all disabled:opacity-60';
 
 export function MinhaContaPage() {
-  const { token, usuario, atualizarUsuario } = useAuthStore();
+  const { token, usuario } = useAuthStore();
   const { mostrarToast } = useToastStore();
   const [senhaAtual, setSenhaAtual] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
-  const [senhaProtheus, setSenhaProtheus] = useState('');
   const [salvandoSenha, setSalvandoSenha] = useState(false);
-  const [validandoProtheus, setValidandoProtheus] = useState(false);
 
   if (!usuario) return null;
 
@@ -50,20 +48,6 @@ export function MinhaContaPage() {
     mostrarToast('Senha do PDV alterada com sucesso.', 'sucesso');
   };
 
-  const validarProtheus = async () => {
-    if (!token || !senhaProtheus) return;
-    setValidandoProtheus(true);
-    const resultado = await usuarioService.salvarMinhaSenhaProtheus(token, senhaProtheus);
-    setValidandoProtheus(false);
-    if (!resultado.sucesso || !resultado.usuario) {
-      mostrarToast(resultado.erro || 'Não foi possível validar sua conta no Protheus.', 'erro');
-      return;
-    }
-    atualizarUsuario(resultado.usuario);
-    setSenhaProtheus('');
-    mostrarToast('Conta Protheus validada. O PDV foi liberado para vendas.', 'sucesso');
-  };
-
   return (
     <AppShell rotaAtiva="/minha-conta">
       <Toast />
@@ -90,9 +74,9 @@ export function MinhaContaPage() {
           </p>
           <p className="text-sm mt-0.5 opacity-80">
             {usuario.prontoParaVender
-              ? 'Seu usuário, vendedor e senha Protheus estão configurados.'
+              ? 'Seu usuário e vendedor estão vinculados. As vendas usam a conta de integração do servidor.'
               : vinculoDefinido
-                ? 'Cadastre sua senha Protheus abaixo para liberar o PDV.'
+                ? 'Peça ao administrador para conferir seu vínculo de vendedor.'
                 : 'O administrador precisa vincular seu usuário e vendedor do Protheus.'}
           </p>
         </div>
@@ -104,7 +88,7 @@ export function MinhaContaPage() {
             <h2 className="font-bold text-slate-800 flex items-center gap-2">
               <KeyRound size={18} className="text-blue-600" /> Conta Protheus
             </h2>
-            <p className="text-sm text-slate-400 mt-1">A senha é cifrada e nunca é exibida novamente.</p>
+            <p className="text-sm text-slate-400 mt-1">A integração usa a conta principal do servidor. Você não precisa informar uma senha do Protheus.</p>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -122,26 +106,6 @@ export function MinhaContaPage() {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Senha Protheus</label>
-              <input
-                type="password"
-                value={senhaProtheus}
-                onChange={(e) => setSenhaProtheus(e.target.value)}
-                disabled={!vinculoDefinido || validandoProtheus}
-                placeholder={usuario.protheusSenhaDefinida ? 'Digite para validar uma nova senha' : 'Digite sua senha do Protheus'}
-                autoComplete="new-password"
-                className={inputCls}
-              />
-            </div>
-
-            <button
-              onClick={validarProtheus}
-              disabled={!vinculoDefinido || !senhaProtheus || validandoProtheus}
-              className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-colors disabled:opacity-50"
-            >
-              {validandoProtheus ? 'Validando no Protheus...' : usuario.protheusSenhaDefinida ? 'Atualizar e validar senha' : 'Salvar e liberar PDV'}
-            </button>
           </div>
         </section>
 

@@ -1,6 +1,7 @@
 import './env.js';
+import { resolverUrls4Sales } from './protheus-4sales-config.js';
 
-export const PROTHEUS_REST_BASE = 'http://177.67.71.212:9990/rest/';
+export const PROTHEUS_REST_BASE = resolverUrls4Sales().base;
 export const PROTHEUS_TENANT = '14,01';
 
 function headers() {
@@ -25,7 +26,9 @@ export async function consultar4Sales(caminho, { timeoutMs = 30000 } = {}) {
   let corpo;
   try { corpo = JSON.parse(texto); } catch { corpo = null; }
   if (!resposta.ok || corpo === null) {
-    throw new Error(`Consulta 4Sales ${caminho} falhou: HTTP ${resposta.status}.`);
+    const erro = new Error(`Consulta 4Sales ${caminho} falhou: HTTP ${resposta.status}.`);
+    erro.status = resposta.status;
+    throw erro;
   }
   return corpo;
 }

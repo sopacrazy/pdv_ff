@@ -5,9 +5,23 @@ import { montarIdIntegracao } from './id-integracao.js';
 const venda = { id: 'pdv-test-123', numero_cupom: '37', caixa: '001', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z', data_local: '2026-09-22' };
 const itens = [{ codigo_produto: '199.029', descricao: 'MACA', quantidade: 2, valor_unitario: 16500, valor_total: 33000, desconto: 0 }];
 const vendedor = { protheus_usr_id: '163', protheus_vend_codigo: '000090' };
-const cliente = { code: 'YDOVT3', store: '01', pricelist: '015' };
+const cliente = { code: 'YDOVT3', store: '01', pricelist: '015', formaPagamento: 'BOL', formaPagamentoDescricao: 'BOLETO' };
 const precos = [{ itemCode: '199.029 ', activeItemPrice: '1', minimumSalesPrice: 165 }];
 const montar = (v = venda, p = precos) => montarVenda4Sales(v, itens, vendedor, cliente, p);
+test('A1_FORMA define a forma BOL e A1_COND mantém a condição 008 em todos os campos', () => {
+ const p = montar({ ...venda, forma_pagamento: '008' });
+ for (const contexto of [p.body, p.body.client]) {
+  assert.deepEqual(contexto.paymentMethods, { id: 'BOL ', name: 'BOLETO' });
+  assert.equal(contexto.paymentForm, 'BOL');
+  assert.equal(contexto.paymentType.id, '008');
+ }
+});
+test('cada cliente usa sua própria forma de pagamento e não há DEP como fallback', () => {
+ const p = montarVenda4Sales(venda, itens, vendedor, { ...cliente, formaPagamento: 'R$ ', formaPagamentoDescricao: 'DINHEIRO' }, precos);
+ assert.equal(p.body.paymentMethods.id.trim(), 'R$');
+ assert.equal(p.body.client.paymentForm, 'R$');
+ assert.throws(() => montarVenda4Sales(venda, itens, vendedor, { ...cliente, formaPagamento: '' }, precos), /A1_FORMA/);
+});
 test('mapeia centavos e contexto autorizado sem reutilizar o bilhete 645', () => {
  const p = montar(); assert.equal(p.body.value, 330); assert.equal(p.body.items[0].price,165);
  assert.equal(p.body._id,'000037-0001-000163-20260922'); assert.equal(p.body.client.externalCode,'YDOVT3');
@@ -21,7 +35,7 @@ test('usa a condição de pagamento do cadastro do cliente como paymentType, sem
  assert.equal(p.body.paymentType.id, '001'); assert.equal(p.body.paymentType.name, '001');
 });
 test('usa cliente, loja e tabela escolhidos no Bilhete em todos os pontos do payload', () => {
- const clienteBilhete = { code: '000001', store: '01', pricelist: { id: '001', name: 'TABELA GERAL' } };
+ const clienteBilhete = { ...cliente, code: '000001', store: '01', pricelist: { id: '001', name: 'TABELA GERAL' } };
  const vendaBilhete = { ...venda, cliente_codigo: '000001', cliente_loja: '01', tabela_preco: '001' };
  const p = montarVenda4Sales(vendaBilhete, itens, vendedor, clienteBilhete, precos);
  assert.equal(p.body.client.externalCode, '000001');
@@ -30,14 +44,14 @@ test('usa cliente, loja e tabela escolhidos no Bilhete em todos os pontos do pay
  assert.equal(p.body.items[0].rangePrices[0].id, '001');
 });
 test('preserva os espaços da chave SA1 para clientes com código curto', () => {
- const clienteCurto = { id: '010001  01', code: '0001', store: '01', pricelist: '001' };
+ const clienteCurto = { ...cliente, id: '010001  01', code: '0001', store: '01', pricelist: '001' };
  const vendaCurta = { ...venda, cliente_codigo: '0001', cliente_loja: '01', tabela_preco: '001' };
  const p = montarVenda4Sales(vendaCurta, itens, vendedor, clienteCurto, precos);
  assert.equal(p.body.client.externalCode, '0001  ');
  assert.equal(p.body.client._id, '010001  01');
 });
 test('envia o nome informado no cliente à vista para gravação em Z4_NOMCLI', () => {
- const clienteCurto = { id: '010001  01', code: '0001', store: '01', name: 'A VISTA', pricelist: '001' };
+ const clienteCurto = { ...cliente, id: '010001  01', code: '0001', store: '01', name: 'A VISTA', pricelist: '001' };
  const vendaCurta = { ...venda, cliente_codigo: '0001', cliente_loja: '01', cliente_nome: 'MARIA DA SILVA', tabela_preco: '001' };
  const p = montarVenda4Sales(vendaCurta, itens, vendedor, clienteCurto, precos);
  assert.equal(p.body.clientName, 'MARIA DA SILVA');

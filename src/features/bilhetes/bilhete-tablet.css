@@ -39,12 +39,12 @@
 @media (max-width: 1399px) {
   .bilhete-header > div:nth-child(2) { font-size: 18px; padding: 8px 12px; letter-spacing: .08em; }
   .bilhete-header > div:first-child > div { font-size: 14px; letter-spacing: 0; }
-  /* One compact product row: description, quantity, price, total, remove. */
+  /* Compact row with both quantities and prices. */
   .bilhete-table, .bilhete-table tbody { display: block; width: 100%; white-space: normal; }
   .bilhete-table thead { display: none; }
   .bilhete-table tbody { padding: 10px 12px; font-family: inherit; font-size: 16px; }
-  .bilhete-table tr { display: grid; grid-template-columns: minmax(140px, 1fr) 88px 88px minmax(80px, auto) minmax(92px, auto) 48px; align-items: center; gap: 10px; margin-bottom: 8px; padding: 12px; border: 1px solid #dbe3ef; border-radius: 12px; }
-  .bilhete-table tr[data-segunda-unidade="true"] { grid-template-columns: minmax(140px, 1fr) 88px 88px minmax(80px, auto) minmax(92px, auto) 48px; gap: 10px; }
+  .bilhete-table tr { display: grid; grid-template-columns: minmax(140px, 1fr) 88px 88px minmax(80px, auto) minmax(100px, auto) minmax(92px, auto) 48px; align-items: center; gap: 10px; margin-bottom: 8px; padding: 12px; border: 1px solid #dbe3ef; border-radius: 12px; }
+  .bilhete-table tr[data-segunda-unidade="true"] { gap: 10px; }
   .bilhete-table td { padding: 0; min-width: 0; }
   .bilhete-table td:nth-child(1), .bilhete-table td:nth-child(2), .bilhete-table td:nth-child(5), .bilhete-table td:nth-child(7) { display: none; }
   .bilhete-table tr[data-segunda-unidade="false"] td:nth-child(6) > span { display: flex; min-height: 48px; align-items: center; justify-content: center; border: 1px dashed #cbd5e1; border-radius: 4px; font-size: 12px; color: #64748b; }
@@ -57,8 +57,8 @@
   .bilhete-table td:nth-child(4)::before, .bilhete-table td:nth-child(6)::before { display: block; text-align: left; font-size: 11px; color: #475569; margin-bottom: 4px; font-weight: 600; }
   .bilhete-table td[data-unidade]::after { content: attr(data-unidade); position: absolute; right: 8px; bottom: 16px; font-size: 11px; color: #64748b; pointer-events: none; }
   .bilhete-table td[data-unidade] input { min-width: 0; padding: 8px 32px 8px 6px; font-size: 20px; font-weight: 800; }
-  .bilhete-table td:nth-child(8), .bilhete-table td:nth-child(9) { white-space: nowrap; font-size: 18px; font-weight: 800; }
-  .bilhete-table td:nth-child(9) { color: #14532d; font-size: 20px; }
+  .bilhete-table td:nth-child(8), .bilhete-table td:nth-child(9), .bilhete-table td:nth-child(10) { white-space: nowrap; font-size: 18px; font-weight: 800; }
+  .bilhete-table td:nth-child(10) { color: #14532d; font-size: 20px; }
   .bilhete-table td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 500; color: #475569; margin-bottom: 6px; }
   .bilhete-total > div { padding: 16px; }
   .bilhete-total > div > div:last-child { font-size: 34px; }
@@ -98,8 +98,8 @@
   .bilhete-field-label { font-size: 12px; margin-bottom: 4px; }
   .bilhete-total { min-width: 160px; padding-right: 12px; }
   .bilhete-total > div > div:last-child { font-size: 24px; }
-  .bilhete-table { min-width: 660px; }
-  .bilhete-table tr[data-segunda-unidade="true"] { min-width: 660px; }
+  .bilhete-table { min-width: 760px; }
+  .bilhete-table tr[data-segunda-unidade="true"] { min-width: 760px; }
   .bilhete-table input { min-width: 0; }
   .bilhete-summary > div:first-child { padding: 8px; }
 }
@@ -110,7 +110,7 @@
 @media (min-width: 1400px) {
   .bilhete-table { table-layout: fixed; white-space: normal; }
   .bilhete-table th { font-size: 12px; padding: 12px 6px; width: auto; }
-  .bilhete-table th:nth-child(1), .bilhete-table th:nth-child(5), .bilhete-table th:nth-child(7), .bilhete-table th:nth-child(10) { width: 52px; }
+  .bilhete-table th:nth-child(1), .bilhete-table th:nth-child(5), .bilhete-table th:nth-child(7), .bilhete-table th:nth-child(11) { width: 52px; }
   .bilhete-table th:nth-child(3) { width: 24%; }
   .bilhete-table td { padding: 10px 6px; font-size: 16px; overflow-wrap: anywhere; }
   .bilhete-table td:nth-child(3) { white-space: normal; }

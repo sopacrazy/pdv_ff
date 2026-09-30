@@ -1,13 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
+import sql from 'mssql';
 import { enviarVendaAoProtheus, processarFilaProtheus } from './fila-protheus.js';
 import { URL_TESTE_4SALES } from './protheus-4sales-test.js';
-import { cifrarSenhaProtheus } from './credenciais-protheus.js';
-
-// Fixo pro arquivo inteiro (não precisa ir/voltar por teste como PROTHEUS_REST_USER/PASSWORD):
-// cifrarSenhaProtheus só é chamado nesse arquivo, então não há senha real de operador em jogo.
-process.env.PROTHEUS_CRED_SECRET = process.env.PROTHEUS_CRED_SECRET || 'segredo-teste-fila-protheus';
+import { limparCacheContaRestPrincipal } from './conta-rest-principal.js';
 
 function criarDb() {
   const db = new Database(':memory:');
@@ -18,7 +15,8 @@ function criarDb() {
       forma_pagamento TEXT, criado_em TEXT, data_local TEXT, deletado TEXT NOT NULL DEFAULT '',
       status_protheus TEXT NOT NULL DEFAULT 'LOCAL', valor_recebido INTEGER, troco INTEGER,
       editado_em TEXT, bilhete_protheus TEXT, resultado_protheus TEXT, payload_protheus TEXT,
-      protheus_atualizado_em TEXT, id_integracao TEXT, tipo_operacao TEXT NOT NULL DEFAULT 'PDV'
+      protheus_atualizado_em TEXT, id_integracao TEXT, tipo_operacao TEXT NOT NULL DEFAULT 'PDV',
+      vendedor_filial TEXT, vendedor_codigo TEXT, vendedor_nome TEXT, protheus_usr_id TEXT
     );
     CREATE TABLE venda_itens (
       id TEXT PRIMARY KEY, venda_id TEXT NOT NULL, codigo_produto TEXT, descricao TEXT,
@@ -49,7 +47,8 @@ function inserirVenda(db, id, overrides = {}) {
   db.prepare(`
     INSERT OR IGNORE INTO usuarios (id, nome, protheus_vend_codigo, protheus_vend_nome, protheus_usr_codigo, protheus_usr_senha_cifrada)
     VALUES ('usuario-teste', 'Operador Teste', '000090', 'Vendedor Teste', 'usr.teste', @senhaCifrada)
-  `).run({ senhaCifrada: cifrarSenhaProtheus('senha-teste') });
+  `).run({ senhaCifrada: null });
+  db.prepare("UPDATE vendas SET vendedor_filial='01',vendedor_codigo='000090',vendedor_nome='Vendedor Teste',protheus_usr_id='000001' WHERE id=?").run(id);
 }
 
 // Mocka as duas consultas feitas por prepararVenda4Sales (cliente + tabela de preços) e o POST final.
@@ -57,7 +56,7 @@ function mockFetchSucesso() {
   return async (url) => {
     const href = String(url);
     if (href.includes('api/tgv/sellers/codeuser')) {
-      return new Response(JSON.stringify({ items: [{ branchid: '01', code: '000090', name: 'Vendedor Teste', userid: '000001', isseller: true }] }), { status: 200 });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }
     if (href.includes('customers/YDOVT3/01')) {
       return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste' }), { status: 200 });
@@ -77,7 +76,7 @@ function mockFetchSucessoGenerico() {
   return async (url, opcoes) => {
     const href = String(url);
     if (href.includes('api/tgv/sellers/codeuser')) {
-      return new Response(JSON.stringify({ items: [{ branchid: '01', code: '000090', name: 'Vendedor Teste', userid: '000001', isseller: true }] }), { status: 200 });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }
     if (href.includes('customers/YDOVT3/01')) {
       return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste' }), { status: 200 });
@@ -95,14 +94,23 @@ function mockFetchSucessoGenerico() {
 
 async function comCredenciais(fn) {
   const originalFetch = globalThis.fetch;
+  const originalPool = sql.ConnectionPool;
+  sql.ConnectionPool = class {
+    async connect() {}
+    request() { return { input() { return this; }, async query() { return { recordset: [{ codigo: 'BOL', descricao: 'BOLETO' }] }; } }; }
+    async close() {}
+  };
   const oldUser = process.env.PROTHEUS_REST_USER;
   const oldPass = process.env.PROTHEUS_REST_PASSWORD;
   process.env.PROTHEUS_REST_USER = 'teste';
   process.env.PROTHEUS_REST_PASSWORD = 'teste';
+  limparCacheContaRestPrincipal();
   try {
     await fn();
   } finally {
     globalThis.fetch = originalFetch;
+    sql.ConnectionPool = originalPool;
+    limparCacheContaRestPrincipal();
     if (oldUser === undefined) delete process.env.PROTHEUS_REST_USER; else process.env.PROTHEUS_REST_USER = oldUser;
     if (oldPass === undefined) delete process.env.PROTHEUS_REST_PASSWORD; else process.env.PROTHEUS_REST_PASSWORD = oldPass;
   }
@@ -252,13 +260,56 @@ test('venda "em andamento" por outra tentativa conta separado de falha real, nã
     const filaPromise = processarFilaProtheus('teste', db);
     // Deixa a fila rodar até travar na consulta de v0 antes de disparar o envio direto de v1.
     await new Promise((resolve) => setTimeout(resolve, 10));
-    const envioDireto = await enviarVendaAoProtheus(db, 'v1');
-    assert.equal(envioDireto.sucesso, true);
-
+    const envioDireto = enviarVendaAoProtheus(db, 'v1');
     liberarV0();
+    assert.equal((await envioDireto).sucesso, true);
     const resultadoFila = await filaPromise;
 
     assert.equal(resultadoFila.emAndamento, 1);
     assert.equal(resultadoFila.falhas, 0);
   });
 });
+
+test('dois vendedores enviam pela mesma conta REST, com um POST por vez e snapshot preservado', () => comCredenciais(async () => {
+  const db = criarDb(); inserirVenda(db, 'v1'); inserirVenda(db, 'v2');
+  db.prepare("UPDATE vendas SET vendedor_codigo='000013', vendedor_nome='Outro vendedor',protheus_usr_id='000163',numero_cupom='000002' WHERE id='v2'").run();
+  // Alterar/remover o operador depois da emissão não altera o vendedor dos pedidos.
+  db.prepare('DELETE FROM usuarios').run();
+  const base = mockFetchSucessoGenerico();
+  let ativos = 0, maximo = 0, consultasConta = 0;
+  const enviados = [];
+  globalThis.fetch = async (url, opcoes) => {
+    assert.equal(opcoes.headers.Authorization, 'Basic ' + Buffer.from('teste:teste').toString('base64'));
+    if (String(url).includes('sellers/codeuser')) consultasConta++;
+    if (String(url) === URL_TESTE_4SALES) {
+      ativos++; maximo = Math.max(maximo, ativos);
+      enviados.push(JSON.parse(opcoes.body));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      ativos--;
+    }
+    return base(url, opcoes);
+  };
+  const resultados = await Promise.all([enviarVendaAoProtheus(db,'v1'), enviarVendaAoProtheus(db,'v2')]);
+  assert.ok(resultados.every(r => r.sucesso));
+  assert.equal(maximo, 1); assert.equal(consultasConta, 1);
+  assert.deepEqual(enviados.map(p => p.seller.id), ['000090','000013']);
+  assert.deepEqual(enviados.map(p => p.client.seller.id), ['000090','000013']);
+  assert.equal(enviados[1]._id,'000002-0001-000163-20260923');
+  db.close();
+}));
+
+test('reenvio preserva ID e vendedor do payload anterior mesmo depois de mudança do cadastro', () => comCredenciais(async () => {
+  const db = criarDb(); inserirVenda(db,'v1');
+  db.prepare("UPDATE vendas SET id_integracao='id-anterior',payload_protheus=?,vendedor_codigo='000013' WHERE id='v1'")
+    .run(JSON.stringify({body:{_id:'id-original',seller:{id:'000090',name:'Original'}}}));
+  const base = mockFetchSucessoGenerico();
+  globalThis.fetch = (url, opcoes) => {
+    if (String(url) === URL_TESTE_4SALES) {
+      const enviado=JSON.parse(opcoes.body);
+      assert.equal(enviado._id,'id-original'); assert.equal(enviado.seller.id,'000090');
+    }
+    return base(url, opcoes);
+  };
+  assert.equal((await enviarVendaAoProtheus(db,'v1')).sucesso,true);
+  db.close();
+}));

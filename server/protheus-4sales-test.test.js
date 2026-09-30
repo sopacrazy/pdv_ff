@@ -10,7 +10,7 @@ test('contrato 4Sales limita destino e encaminha somente body/cabecalhos permiti
   const doc = documento();
   const p = prepararTeste4Sales(doc);
   assert.equal(p.headers.Authorization, undefined);
-  assert.throws(() => prepararTeste4Sales({ ...doc, url: 'http://outro/'}), /base teste/);
+  assert.throws(() => prepararTeste4Sales({ ...doc, url: 'http://outro/'}), /ambiente configurado/);
   assert.throws(() => prepararTeste4Sales({ ...doc, headers: { ...doc.headers, TenantId: '01,01' } }), /TenantId/);
   assert.throws(() => prepararTeste4Sales({ ...doc, body: { ...doc.body, operation: { id: '1' } } }), /Bilhete/);
   const originalFetch = globalThis.fetch;

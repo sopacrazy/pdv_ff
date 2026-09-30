@@ -6,6 +6,7 @@ export interface Produto {
   fatorConversao?: number | null; // B1_CONV
   tipoConversao?: 'D' | 'M' | string | null; // B1_TIPCONV — 'D' divide a 1ª unidade pelo fator pra achar a 2ª, 'M' multiplica
   preco: number; // B1_PRCVEN
+  precoSegundaUnidade?: number | null; // DA1_PRC2UM da tabela do cliente, em reais
   codigoBarras: string; // B1_CODBAR
   grupo: string; // B1_GRUPO
   saldoEstoque?: number | null; // saldo atual na filial 01 / armazém 01

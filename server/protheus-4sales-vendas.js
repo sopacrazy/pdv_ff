@@ -1,5 +1,8 @@
 import { prepararTeste4Sales, enviarTeste4Sales, URL_TESTE_4SALES } from './protheus-4sales-test.js';
 import { montarIdIntegracao } from './id-integracao.js';
+import { credenciaisContaRestPrincipal } from './conta-rest-principal.js';
+import { PROTHEUS_REST_BASE } from './protheus-4sales-api.js';
+import { consultarFormaPagamentoCliente } from './forma-pagamento-cliente.js';
 
 const tenant = '14,01';
 
@@ -20,11 +23,11 @@ function codigoClienteComTamanhoProtheus(cliente, codigo, loja) {
 async function consultar(path, timeoutMs = 30000) {
   const { PROTHEUS_REST_USER: user, PROTHEUS_REST_PASSWORD: password } = process.env;
   if (!user || !password) throw new Error('Configure as credenciais REST no servidor.');
-  const response = await fetch(new URL(path, URL_TESTE_4SALES.replace('4SALFORTFRUITORDERS', '')), {
+  const response = await fetch(new URL(path, PROTHEUS_REST_BASE), {
     headers: { Authorization: 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64'), TenantId: tenant, 'x-erp-module': 'FAT' },
     signal: AbortSignal.timeout(timeoutMs), redirect: 'error',
   });
-  if (!response.ok) throw new Error(`Consulta à base teste falhou: HTTP ${response.status}.`);
+  if (!response.ok) throw new Error(`Consulta ao Protheus configurado falhou: HTTP ${response.status}.`);
   return response.json();
 }
 
@@ -63,7 +66,9 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
   // Sem descrição/portions/averageDays reais sincronizados do Protheus ainda — usando o próprio código como nome.
   const condicaoPagamento = venda.forma_pagamento.trim();
   const paymentType = { id: condicaoPagamento, name: condicaoPagamento, paymentType: '1', portions: 1, averageDays: 1, financialAddition: 0, financialDiscount: 0, maximumValue: 0, minimumValue: 0, paymentMoreBusiness: false };
-  const paymentMethods = { id: 'DEP ', name: 'DEPOSITO' };
+  const formaPagamento = String(cliente.formaPagamento || '').trim();
+  if (!formaPagamento) throw new Error(`Cliente ${codigoCliente}/${lojaCliente} sem forma de pagamento (A1_FORMA). Confira o cadastro no Protheus.`);
+  const paymentMethods = { id: formaPagamento.padEnd(4, ' '), name: cliente.formaPagamentoDescricao || formaPagamento };
   const clientePayload = {
     _id: cliente.id || `${codigoClientePayload}${lojaCliente}`,
     externalCode: codigoClientePayload,
@@ -73,9 +78,10 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
     priceTable,
     paymentType,
     paymentMethods,
-    paymentForm: 'DEP',
+    paymentForm: formaPagamento,
     seller,
   };
+  // A conta técnica REST não tem vínculo SA3; seller identifica o operador da venda.
   // CONFIRMADO (cupom 000028, bilhete CAQZL1): o Protheus IGNORA este campo — a resposta veio com
   // orderDate = data/hora real do relógio dele no momento do processamento, mesmo tendo enviado
   // data_local adiantada. Ou seja, isto aqui não controla a data do documento no Protheus; quem
@@ -94,7 +100,7 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
     ...(clienteAVista ? { clientName: nomeClienteBilhete } : {}),
     subsidiary: { id: tenant, name: 'Operacao', companyName: 'FORT FRUIT LTDA' },
     client: clientePayload,
-    seller, priceTable, paymentType, paymentMethods, items,
+    seller, priceTable, paymentType, paymentMethods, paymentForm: formaPagamento, items,
     currency: { currency: 'BRL', id: '1', locale: 'pt-BR', name: 'REAL' }, currencyConvert: false, currencyValue: 0,
     value: venda.total / 100, productsValue: venda.total / 100, productsValueWithDiscount: venda.total / 100,
     quantity: itens.reduce((s, i) => s + i.quantidade, 0), addition: 0, additions: [], discount: 0, discountPercent: 0, discounts: [], financialAddition: 0, financialDiscount: 0,
@@ -107,7 +113,11 @@ export async function prepararVenda4Sales(venda, itens, vendedor, opcoes) {
   const timeoutMs = opcoes?.timeoutMs;
   const codigoCliente = String(venda.cliente_codigo || 'YDOVT3').trim();
   const lojaCliente = String(venda.cliente_loja || '01').trim();
-  const cliente = await consultar(`api/tgv/customers/${encodeURIComponent(codigoCliente)}/${encodeURIComponent(lojaCliente)}`, timeoutMs);
+  const [cadastro, forma] = await Promise.all([
+    consultar(`api/tgv/customers/${encodeURIComponent(codigoCliente)}/${encodeURIComponent(lojaCliente)}`, timeoutMs),
+    consultarFormaPagamentoCliente(codigoCliente, lojaCliente, { timeoutMs }),
+  ]);
+  const cliente = { ...cadastro, formaPagamento: forma.codigo, formaPagamentoDescricao: forma.descricao };
   const tabelaCliente = String(venda.tabela_preco || cliente.pricelist?.id || cliente.pricelist || '015').trim();
   const precos = [];
   for (let page = 1; page <= 100; page++) {
@@ -120,7 +130,7 @@ export async function prepararVenda4Sales(venda, itens, vendedor, opcoes) {
 }
 
 export async function enviarVenda4Sales(preparado, opcoes) {
-  const resultado = await enviarTeste4Sales(preparado, opcoes);
+  const resultado = await enviarTeste4Sales(preparado, { ...opcoes, credenciaisProtheus: credenciaisContaRestPrincipal() });
   const r = resultado.resposta;
   const sucesso = resultado.httpOk && r?.idWeb === preparado.body._id && r?.company === '14' && r?.branch === '01' && r?.status === 'EFE' && typeof r.ticket === 'string' && !!r.ticket.trim();
   const resultadoDesconhecido = !sucesso && Boolean(resultado.resultadoDesconhecido);

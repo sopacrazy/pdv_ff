@@ -1,4 +1,6 @@
 import { sincronizarUnidadesBilhete } from './sync-unidades-bilhete.js';
+import { consultarCatalogoBilhete } from './sync-catalogo-bilhetes.js';
+import { atualizarPrecosSegundaUnidade } from './precos-segunda-unidade.js';
 import { fileURLToPath } from 'url';
 import { getProtheusCacheDb } from './protheus-cache-db.js';
 import { getDb } from './db.js';
@@ -37,7 +39,7 @@ async function colecaoCompletaOuDiff(db, chave, completo, diff) {
   const cacheVazio = tabelaCache ? db.prepare(`SELECT COUNT(1) AS n FROM ${tabelaCache}`).get().n === 0 : false;
   // Se uma versão nova criar a tabela local depois de o marcador já existir, uma consulta diff
   // devolveria zero e deixaria o cache vazio para sempre. Nesse caso força a carga completa.
-  const anterior = cacheVazio ? null : metadata(db, chave);
+  const anterior = cacheVazio || (chave === 'produtos_sync' && metadata(db, 'produtos_fonte') === 'sql') ? null : metadata(db, chave);
   const caminho = anterior ? `${diff}/${encodeURIComponent(anterior)}` : completo;
   const resultado = await consultarTodasPaginas4Sales(caminho);
   return { ...resultado, chaveMetadata: chave };
@@ -132,7 +134,7 @@ async function executarSincronizacaoCacheBilhetes() {
     const [clientes, financeiro, produtos, condicoes, tabelas, estoques] = await Promise.all([
       colecaoCompletaOuDiff(db, 'clientes_sync', 'api/tgv/customers', 'api/tgv/customers/sync/diff'),
       colecaoCompletaOuDiff(db, 'financeiro_sync', 'api/tgv/financialstatus/sync', 'api/tgv/financialstatus/sync/diff'),
-      colecaoCompletaOuDiff(db, 'produtos_sync', 'api/tgv/products', 'api/tgv/products/sync/diff'),
+      consultarCatalogoBilhete(() => colecaoCompletaOuDiff(db, 'produtos_sync', 'api/tgv/products', 'api/tgv/products/sync/diff')),
       consultarTodasPaginas4Sales('api/tgv/paymentconditions'),
       consultarTodasPaginas4Sales('api/tgv/priceList'),
       // A API nativa retorna o saldo por empresa, filial e armazém. Uma carga única grande é
@@ -224,6 +226,7 @@ async function executarSincronizacaoCacheBilhetes() {
       salvarMetadata(db, clientes.chaveMetadata, clientes.ultimaSincronizacao);
       salvarMetadata(db, financeiro.chaveMetadata, financeiro.ultimaSincronizacao);
       salvarMetadata(db, produtos.chaveMetadata, produtos.ultimaSincronizacao);
+      salvarMetadata(db, 'produtos_fonte', produtos.fonte);
     })();
 
     let estoquesAtualizados = 0;
@@ -314,6 +317,8 @@ export async function sincronizarPrecosTabela(tabela, { forcar = false } = {}) {
       }
       salvarMetadata(db, `precos_${codigo}`, agora);
     })();
+    try { await atualizarPrecosSegundaUnidade(db, codigo); }
+    catch (erro) { console.warn(`[sync-bilhetes] Preços da segunda unidade da tabela ${codigo} mantidos: ${erro.message}`); }
     return { sucesso: true, itens: resultado.itens.length };
   })();
   sincronizacoesPrecosEmAndamento.set(codigo, tarefa);

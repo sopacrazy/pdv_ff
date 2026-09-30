@@ -5,6 +5,15 @@ function headersComToken(token: string | null): HeadersInit {
 }
 
 export const usuarioService = {
+  verificarContaRestPrincipal: async (token: string): Promise<{ sucesso: boolean; usuario?: string; erro?: string }> => {
+    try {
+      const resp = await fetch('/api/protheus/integracao', { headers: headersComToken(token) });
+      const corpo = await resp.json();
+      return { ...corpo, sucesso: resp.ok && corpo.sucesso === true };
+    } catch {
+      return { sucesso: false, erro: 'Não foi possível verificar a conta de integração.' };
+    }
+  },
   login: async (login: string, senha: string): Promise<{ sucesso: boolean; token?: string; usuario?: Usuario; configuracao?: ConfiguracaoSistema; erro?: string }> => {
     try {
       const resp = await fetch('/api/auth/login', {
@@ -71,7 +80,7 @@ export const usuarioService = {
 
   consultarVendedorDoUsuario: async (
     token: string,
-    dados: { protheusCodigo: string; protheusSenha?: string; usuarioPdvId?: string }
+    dados: { protheusCodigo: string; usuarioPdvId?: string }
   ): Promise<{ sucesso: boolean; vendedor?: { filial: string; codigo: string; nome: string; usuarioId: string }; erro?: string }> => {
     try {
       const resp = await fetch('/api/protheus/vendedor-do-usuario', {
@@ -105,27 +114,6 @@ export const usuarioService = {
     }
   },
 
-  salvarMinhaSenhaProtheus: async (
-    token: string,
-    protheusSenha: string
-  ): Promise<{ sucesso: boolean; usuario?: Usuario; erro?: string }> => {
-    try {
-      const resp = await fetch('/api/minha-conta/protheus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headersComToken(token) },
-        body: JSON.stringify({ protheusSenha }),
-      });
-      const corpo = await resp.json().catch(() => ({}));
-      if (!resp.ok) return { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
-      return { sucesso: true, usuario: corpo.usuario };
-    } catch (erro) {
-      return {
-        sucesso: false,
-        erro: erro instanceof Error ? erro.message : 'Falha ao validar a conta no Protheus',
-      };
-    }
-  },
-
   criar: async (
     token: string,
     dados: {
@@ -135,7 +123,6 @@ export const usuarioService = {
       papel: 'ADMIN' | 'OPERADOR';
       protheusCodigo?: string | null;
       protheusNome?: string | null;
-      protheusSenha?: string;
       protheusVendFilial?: string | null;
       protheusVendCodigo?: string | null;
       protheusVendNome?: string | null;
@@ -165,7 +152,6 @@ export const usuarioService = {
       senha?: string;
       protheusCodigo?: string | null;
       protheusNome?: string | null;
-      protheusSenha?: string;
       protheusVendFilial?: string | null;
       protheusVendCodigo?: string | null;
       protheusVendNome?: string | null;

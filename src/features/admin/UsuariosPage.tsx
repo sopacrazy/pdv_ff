@@ -20,7 +20,6 @@ interface FormularioUsuario {
   papel: Papel;
   protheusCodigo: string;
   protheusNome: string;
-  protheusSenha: string;
   protheusVendFilial: string;
   protheusVendCodigo: string;
   protheusVendNome: string;
@@ -33,7 +32,6 @@ const FORM_VAZIO: FormularioUsuario = {
   papel: 'OPERADOR',
   protheusCodigo: '',
   protheusNome: '',
-  protheusSenha: '',
   protheusVendFilial: '',
   protheusVendCodigo: '',
   protheusVendNome: '',
@@ -51,6 +49,8 @@ export function UsuariosPage() {
   const [form, setForm] = useState<FormularioUsuario>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
   const [consultandoVinculo, setConsultandoVinculo] = useState(false);
+  const [verificandoConta, setVerificandoConta] = useState(false);
+  const [contaIntegracao, setContaIntegracao] = useState<{ sucesso: boolean; usuario?: string; erro?: string } | null>(null);
   const [usuarioParaAlternar, setUsuarioParaAlternar] = useState<Usuario | null>(null);
   const [usuarioParaExcluir, setUsuarioParaExcluir] = useState<Usuario | null>(null);
   const [usuariosProtheus, setUsuariosProtheus] = useState<UsuarioProtheus[]>([]);
@@ -89,8 +89,8 @@ export function UsuariosPage() {
   const [vendedorIndex, setVendedorIndex] = useState(0);
   const listaVendedorRef = useRef<HTMLDivElement>(null);
 
-  // USR_CODIGO é o login do Basic Auth, mas A3_CODUSR aponta para o USR_ID interno. RFATA03
-  // procura a SA3 por esse ID; por isso a lista só mostra o vínculo real do Protheus.
+  // O vínculo comercial continua sendo SYS_USR.USR_ID -> SA3.A3_CODUSR.
+  // A senha/autenticação REST pertencem somente à conta principal do servidor.
   const idUsuarioProtheusSelecionado = usuariosProtheus.find((u) => u.codigo === form.protheusCodigo)?.idProtheus;
   const vendedoresDisponiveis = form.protheusVendFilial && form.protheusCodigo
     ? (vendedoresPorFilial[form.protheusVendFilial] || []).filter((v) => v.usuarioCodigo === idUsuarioProtheusSelecionado)
@@ -119,6 +119,13 @@ export function UsuariosPage() {
     setCarregando(true);
     setUsuarios(await usuarioService.listar(token));
     setCarregando(false);
+  };
+
+  const verificarContaPrincipal = async () => {
+    if (!token || verificandoConta) return;
+    setVerificandoConta(true);
+    setContaIntegracao(await usuarioService.verificarContaRestPrincipal(token));
+    setVerificandoConta(false);
   };
 
   useEffect(() => {
@@ -175,7 +182,6 @@ export function UsuariosPage() {
       papel: usuario.papel,
       protheusCodigo: usuario.protheusCodigo || '',
       protheusNome: usuario.protheusNome || '',
-      protheusSenha: '',
       protheusVendFilial: usuario.protheusVendFilial || '',
       protheusVendCodigo: usuario.protheusVendCodigo || '',
       protheusVendNome: usuario.protheusVendNome || '',
@@ -247,14 +253,9 @@ export function UsuariosPage() {
       mostrarToast('Selecione primeiro o usuário Protheus', 'erro');
       return;
     }
-    if (!form.protheusSenha && !(modal === 'EDITAR' && usuarioEmEdicao?.protheusSenhaDefinida)) {
-      mostrarToast('Informe a senha REST do usuário Protheus', 'erro');
-      return;
-    }
     setConsultandoVinculo(true);
     const resultado = await usuarioService.consultarVendedorDoUsuario(token, {
       protheusCodigo: form.protheusCodigo,
-      protheusSenha: form.protheusSenha || undefined,
       usuarioPdvId: usuarioEmEdicao?.id,
     });
     setConsultandoVinculo(false);
@@ -305,7 +306,7 @@ export function UsuariosPage() {
       mostrarToast('A senha precisa ter pelo menos 6 caracteres', 'erro');
       return;
     }
-    const temVinculoParcial = !!(form.protheusCodigo || form.protheusVendFilial || form.protheusVendCodigo || form.protheusSenha);
+    const temVinculoParcial = !!(form.protheusCodigo || form.protheusVendFilial || form.protheusVendCodigo);
     if (temVinculoParcial && (!form.protheusCodigo || !form.protheusVendFilial || !form.protheusVendCodigo)) {
       mostrarToast('Selecione usuário Protheus, filial e o vendedor vinculado', 'erro');
       return;
@@ -320,7 +321,6 @@ export function UsuariosPage() {
             papel: form.papel,
             protheusCodigo: form.protheusCodigo || null,
             protheusNome: form.protheusNome || null,
-            protheusSenha: form.protheusSenha || undefined,
             protheusVendFilial: form.protheusVendFilial || null,
             protheusVendCodigo: form.protheusVendCodigo || null,
             protheusVendNome: form.protheusVendNome || null,
@@ -331,7 +331,6 @@ export function UsuariosPage() {
             senha: form.senha || undefined,
             protheusCodigo: form.protheusCodigo || null,
             protheusNome: form.protheusNome || null,
-            protheusSenha: form.protheusSenha || undefined,
             protheusVendFilial: form.protheusVendFilial || null,
             protheusVendCodigo: form.protheusVendCodigo || null,
             protheusVendNome: form.protheusVendNome || null,
@@ -397,6 +396,20 @@ export function UsuariosPage() {
           Novo Usuário
         </button>
       </header>
+
+      <div className="bg-white rounded-2xl border border-slate-200/80 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-bold text-slate-800">Conta principal de integração</p>
+          <p className="text-sm text-slate-500">As vendas usam a conta configurada no servidor e o vendedor de cada operador.</p>
+          {contaIntegracao && <p className={clsx('text-sm mt-1', contaIntegracao.sucesso ? 'text-emerald-700' : 'text-red-600')}>
+            {contaIntegracao.sucesso ? `${contaIntegracao.usuario}: conexão validada, sem vínculo de vendedor.` : contaIntegracao.erro}
+          </p>}
+        </div>
+        <button onClick={verificarContaPrincipal} disabled={verificandoConta}
+          className="px-4 py-2 rounded-xl bg-blue-50 text-blue-700 font-bold text-sm hover:bg-blue-100 disabled:opacity-50">
+          {verificandoConta ? 'Verificando...' : 'Verificar conta principal'}
+        </button>
+      </div>
 
       <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
         {carregando ? (
@@ -651,24 +664,8 @@ export function UsuariosPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                  Senha Protheus (REST) — opcional para o administrador{' '}
-                  <span className="normal-case font-normal">
-                    {modal === 'EDITAR' && '(deixe em branco para manter)'}
-                  </span>
-                </label>
-                <input
-                  type="password"
-                  value={form.protheusSenha}
-                  onChange={(e) => setForm({ ...form, protheusSenha: e.target.value })}
-                  placeholder={
-                    modal === 'EDITAR' && usuarioEmEdicao?.protheusSenhaDefinida ? 'Senha configurada' : 'Senha do login Protheus acima'
-                  }
-                  className={inputCls}
-                />
-                <p className="text-xs text-slate-400 mt-1">
-                  O próprio usuário poderá cadastrar e validar esta senha em Minha conta. Sem uma senha validada,
-                  o PDV ficará bloqueado para vendas, mas o usuário conseguirá entrar no sistema.
+                <p className="text-sm text-slate-500">
+                  A integração usa a conta REST principal do servidor. Este operador precisa somente do vínculo com seu usuário e vendedor.
                 </p>
                 <button
                   type="button"
@@ -676,7 +673,7 @@ export function UsuariosPage() {
                   disabled={consultandoVinculo || !form.protheusCodigo}
                   className="mt-3 w-full py-2.5 rounded-xl border-2 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-sm transition-colors disabled:opacity-50"
                 >
-                  {consultandoVinculo ? 'Consultando o Protheus...' : 'Localizar vendedor vinculado no Protheus'}
+                  {consultandoVinculo ? 'Consultando cadastro...' : 'Localizar vendedor vinculado'}
                 </button>
               </div>
 

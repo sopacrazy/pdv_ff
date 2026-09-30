@@ -1,6 +1,4 @@
-import { URL_TESTE_4SALES } from './protheus-4sales-test.js';
-
-const BASE_REST = URL_TESTE_4SALES.replace('4SALFORTFRUITORDERS', '');
+import { PROTHEUS_REST_BASE } from './protheus-4sales-api.js';
 
 function autenticacaoBasica(usuario, senha) {
   return 'Basic ' + Buffer.from(`${usuario}:${senha}`).toString('base64');
@@ -9,9 +7,9 @@ function autenticacaoBasica(usuario, senha) {
 // Endpoint oficial encontrado no catálogo REST deste Protheus. Ele resolve o vendedor a partir do
 // usuário realmente autenticado, aplicando a mesma amarração SYS_USR.USR_ID -> SA3.A3_CODUSR que
 // o RFATA03 usa ao incluir o bilhete.
-export async function consultarVendedorDoUsuario({ usuario, senha, filial = '01', timeoutMs = 30000 }) {
+export async function consultarVendedoresDaConta({ usuario, senha, filial = '01', timeoutMs = 30000 }) {
   if (!usuario || !senha) throw new Error('Usuário e senha Protheus são obrigatórios para consultar o vendedor.');
-  const response = await fetch(new URL('api/tgv/sellers/codeuser', BASE_REST), {
+  const response = await fetch(new URL('api/tgv/sellers/codeuser', PROTHEUS_REST_BASE), {
     method: 'GET',
     headers: {
       Authorization: autenticacaoBasica(usuario, senha),
@@ -29,9 +27,13 @@ export async function consultarVendedorDoUsuario({ usuario, senha, filial = '01'
     throw new Error(`Consulta do vendedor devolveu resposta inválida (HTTP ${response.status}).`);
   }
   if (!response.ok) throw new Error(corpo?.message || `Consulta do vendedor falhou: HTTP ${response.status}.`);
-  const vendedores = Array.isArray(corpo?.items)
-    ? corpo.items.filter((item) => String(item.branchid || '').trim() === filial && item.isseller !== false)
-    : [];
+  if (!Array.isArray(corpo?.items)) throw new Error('Consulta do vendedor devolveu uma lista inválida.');
+  return corpo.items.filter((item) => String(item.branchid || '').trim() === filial);
+}
+
+export async function consultarVendedorDoUsuario(opcoes) {
+  const filial = opcoes.filial || '01';
+  const vendedores = (await consultarVendedoresDaConta(opcoes)).filter(item => item.isseller !== false);
   if (vendedores.length !== 1) {
     throw new Error(
       vendedores.length === 0

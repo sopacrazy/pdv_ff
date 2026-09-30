@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -73,27 +73,13 @@
     },
     "files": [
       "dist/**/*",
+      "dist-bundle/**/*",
       "electron/**/*",
       "server/**/*",
       "!server/data/**",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "build-resources",
-        "to": ".",
-        "filter": [
-          "gh-token.txt"
-        ]
-      },
-      {
-        "from": ".",
-        "to": ".",
-        "filter": [
-          ".env"
-        ]
-      }
-    ],
+    "extraResources": [],
     "win": {
       "target": "nsis",
       "icon": "build-resources/icon.ico"
@@ -101,14 +87,15 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "include": "build-resources/installer.nsh"
     },
     "publish": {
       "provider": "github",
       "releaseType": "release",
       "owner": "sopacrazy",
       "repo": "pdv_ff",
-      "private": true
+      "private": false
     }
   }
 }
