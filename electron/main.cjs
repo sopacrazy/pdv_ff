@@ -311,8 +311,6 @@ async function criarJanela() {
 }
 
 app.whenReady().then(async () => {
-  abrirSplash();
-
   // Força tema claro pra barra de título nativa (Windows aplica dark mode do sistema por padrão,
   // deixando a barra preta) — a UI do PDV é toda clara, então a barra escura destoa.
   nativeTheme.themeSource = 'light';
@@ -320,6 +318,19 @@ app.whenReady().then(async () => {
   // Troca o menu padrão (File/Edit/View/Window/Help com "Reload"/"Toggle DevTools", que não faz
   // sentido pro operador de caixa) por um menu mínimo só com "Ajuda" (verificar atualização, sobre).
   montarMenu();
+
+  // A instalação nova ainda não tem cadastro de conexão. Permite importá-lo antes de
+  // carregar qualquer módulo do servidor, preservando a inicialização das instalações existentes.
+  try {
+    const configurado = await require('./configuracao-inicial.cjs')({ dialog,
+      diretorioProjeto: path.join(__dirname, '..'), diretorioResources: process.resourcesPath,
+      diretorioConfiguracao: process.env.PDV_CONFIG_DIR, arquivoExplicito: process.env.PDV_ENV_FILE });
+    if (!configurado) { app.quit(); return; }
+  } catch (erro) {
+    dialog.showErrorBox('Configurar PDV Fort Fruit', String(erro.message || erro));
+    app.quit(); return;
+  }
+  abrirSplash();
 
   // Sobe o servidor embutido (Express + SQLite) antes de abrir a janela. server/server.js termina
   // o import sem aguardar qualquer rede; a janela espera somente a porta local estar escutando.

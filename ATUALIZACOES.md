@@ -2,7 +2,7 @@
 
 O desktop consulta as releases públicas de `sopacrazy/pdv_ff` ao abrir, a cada quatro horas e pelo menu **Ajuda → Verificar atualizações agora**. Baixa a versão nova e oferece a instalação ao reiniciar. Finalize ou cancele o cupom aberto antes de fechar o sistema. Bancos, usuários e vendas ficam em `%APPDATA%\react-example\data` e não são substituídos pelo instalador.
 
-A partir de 0.1.15, a configuração do Protheus fica em `%APPDATA%\react-example\config\.env`. O instalador copia o `.env` de uma instalação anterior antes de removê-la, se a configuração externa ainda não existir. Não sobrescreve um arquivo externo existente. Instalações novas devem receber esse arquivo localmente, conforme `.env.example`. O pacote publicado não inclui senhas, tokens ou bancos de dados. `PDV_ENV_FILE` permite definir outro arquivo explicitamente.
+A partir de 0.1.15, a configuração do Protheus fica em `%APPDATA%\react-example\config\.env`. O instalador copia o `.env` de uma instalação anterior antes de removê-la, se a configuração externa ainda não existir. Não sobrescreve um arquivo externo existente. Na 0.1.16, a primeira abertura permite importar o `.env` já configurado, transferido localmente da máquina principal. O servidor só inicia depois de validar o arquivo; fechar essa configuração encerra o aplicativo. O pacote publicado não inclui senhas, tokens ou bancos de dados. `PDV_ENV_FILE` permite definir outro arquivo explicitamente.
 
 Versões anteriores podem estar com o atualizador desativado por exigir token de um repositório privado. Nesse caso, instale a 0.1.15 manualmente uma vez; depois, o menu e a consulta automática funcionam sem token.
 
