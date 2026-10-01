@@ -296,6 +296,16 @@ export function getDb() {
     garantirColuna(instancia, 'vendas', 'arredondamento_corrigido_em', 'TEXT');
   });
 
+  aplicarMigracao(instancia, 9, 'Histórico de edição de quantidade em vendas rejeitadas', () => {
+    instancia.exec(`CREATE TABLE IF NOT EXISTS venda_edicoes_quantidade (
+      id TEXT PRIMARY KEY, venda_id TEXT NOT NULL, item_id TEXT NOT NULL,
+      usuario_id TEXT NOT NULL, quantidade_anterior REAL NOT NULL, quantidade_nova REAL NOT NULL,
+      total_item_anterior INTEGER NOT NULL, total_item_novo INTEGER NOT NULL,
+      total_venda_anterior INTEGER NOT NULL, total_venda_novo INTEGER NOT NULL,
+      editado_em TEXT NOT NULL
+    );`);
+  });
+
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
   // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.
   const vendasSemIdIntegracao = instancia.prepare(`

@@ -58,6 +58,36 @@ test('API salva venda PDV pelo total de cada item arredondado, mesmo com fronten
   assert.deepEqual(db.prepare('SELECT subtotal, total FROM vendas WHERE id=?').get(resposta.corpo.id), { subtotal: 2387, total: 2387 });
 });
 
+test('edita quantidade apenas em venda PDV rejeitada, recalcula e registra auditoria sem reenviar', async () => {
+  const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
+    subtotal: 782, desconto: 0, total: 782, formaPagamento: '001',
+    itens: [{ produto: { codigo: '211.064', descricao: 'MELAO CEPI', unidade: 'KG' }, quantidade: 0.99,
+      valorUnitario: 790, valorTotal: 782, desconto: 0 }] };
+  const criada = await json('/api/vendas', 'token1', venda);
+  assert.equal(criada.status, 200);
+  const id = criada.corpo.id;
+  const item = db.prepare('SELECT id FROM venda_itens WHERE venda_id=?').get(id);
+  const rota = `/api/vendas/${id}/itens/${item.id}/quantidade`;
+  const editar = async (quantidade, token = 'token1') => {
+    const resposta = await fetchHttp(base + rota, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ quantidade }) });
+    return { status: resposta.status, corpo: await resposta.json() };
+  };
+  assert.equal((await editar(1)).status, 409);
+  db.prepare("UPDATE vendas SET status_protheus='REJEITADO', payload_protheus='{}' WHERE id=?").run(id);
+  assert.equal((await editar(0)).status, 400);
+  const editada = await editar(1, 'token2');
+  assert.equal(editada.status, 200, JSON.stringify(editada.corpo));
+  assert.equal(editada.corpo.total, 790);
+  assert.deepEqual(db.prepare('SELECT quantidade, valor_total FROM venda_itens WHERE id=?').get(item.id), { quantidade: 1, valor_total: 790 });
+  const depois = db.prepare('SELECT total,subtotal,status_protheus,payload_protheus,editado_em FROM vendas WHERE id=?').get(id);
+  assert.equal(depois.total, 790); assert.equal(depois.subtotal, 790);
+  assert.equal(depois.status_protheus, 'REJEITADO'); assert.equal(depois.payload_protheus, null);
+  assert.ok(depois.editado_em);
+  assert.deepEqual(db.prepare('SELECT usuario_id,quantidade_anterior,quantidade_nova,total_venda_anterior,total_venda_novo FROM venda_edicoes_quantidade WHERE venda_id=?').get(id),
+    { usuario_id: 'u2', quantidade_anterior: 0.99, quantidade_nova: 1, total_venda_anterior: 782, total_venda_novo: 790 });
+  assert.equal((await editar(1.0001)).status, 400);
+});
+
 test('localizar vendedor usa o cadastro sincronizado e não autentica o operador no REST', async () => {
   globalThis.fetch=async()=>{throw new Error('A localização não deve acessar REST');};
   try {

@@ -1,4 +1,14 @@
-# PDV Fort Fruit 0.1.21
+# PDV Fort Fruit 0.1.22
+
+- Em **Consultas**, permite corrigir a quantidade de itens de uma venda PDV rejeitada pelo Protheus.
+- Recalcula o item e o total, mostra o histórico da alteração com usuário e mantém a venda rejeitada até o reenvio manual.
+- Bloqueia edição de vendas integradas, em envio ou sem rejeição confirmada. A correção deve refletir a quantidade realmente vendida e o valor cobrado.
+
+Após instalar, expanda a venda rejeitada em **Consultas**, clique no lápis ao lado da quantidade, confira o novo total, salve e use o botão de reenvio. O retorno de preço abaixo da tabela pode exigir correção do cadastro do produto se a quantidade original estiver correta.
+
+Validação: testes locais, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
+
+## Alterações mantidas da versão 0.1.21
 
 - Corrige o total das novas vendas com itens fracionados: soma os valores já arredondados de cada linha, como no Protheus.
 - Ao reenviar vendas PDV antigas ainda pendentes, corrige somente diferenças comprovadamente causadas por esse arredondamento e registra o total anterior no histórico da venda.

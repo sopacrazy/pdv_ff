@@ -1,5 +1,9 @@
 # Atualizações do PDV Fort Fruit
 
+## Edição de quantidade em venda rejeitada — versão 0.1.22
+
+Em **Consultas**, expanda uma venda PDV rejeitada e use o lápis ao lado da quantidade para corrigir um item. O sistema mostra o novo total para confirmação, salva o histórico com o usuário e só tenta enviar após clicar em reenviar. Corrija apenas a quantidade realmente vendida e confira o valor cobrado. Quando o retorno é preço abaixo da tabela, uma quantidade correta pode exigir ajuste de cadastro no Protheus.
+
 ## Arredondamento de vendas fracionadas — versão 0.1.21
 
 O total das novas vendas PDV é a soma dos valores já arredondados de cada item. Para vendas locais antigas ainda pendentes, a fila corrige diferenças de centavos somente quando elas correspondem ao cálculo anterior; o total original fica registrado e aparece em Consultas. Após instalar na máquina com vendas pendentes, confira o resultado da integração em Consultas.

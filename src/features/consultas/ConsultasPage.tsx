@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   CheckCheck,
   Printer,
+  Pencil,
   Search,
   X,
   type LucideIcon,
@@ -103,6 +104,9 @@ export function ConsultasPage() {
   const [conferindo, setConferindo] = useState(false);
   const [expandidoId, setExpandidoId] = useState<string | null>(null);
   const [detalhe, setDetalhe] = useState<VendaDetalhe | null>(null);
+  const [itemEmEdicao, setItemEmEdicao] = useState<string | null>(null);
+  const [quantidadeEditada, setQuantidadeEditada] = useState('');
+  const [salvandoQuantidade, setSalvandoQuantidade] = useState(false);
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'TODOS' | StatusProtheus>('TODOS');
@@ -178,7 +182,7 @@ export function ConsultasPage() {
     const timer = setInterval(async () => {
       try {
         await carregar(true);
-        if (expandidoId) {
+        if (expandidoId && !itemEmEdicao) {
           const venda = await vendaService.buscarVenda(expandidoId);
           if (venda) setDetalhe(venda);
         }
@@ -187,9 +191,10 @@ export function ConsultasPage() {
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [expandidoId, carregar]);
+  }, [expandidoId, itemEmEdicao, carregar]);
 
   const alternarExpandido = async (id: string) => {
+    setItemEmEdicao(null);
     if (expandidoId === id) {
       setExpandidoId(null);
       setDetalhe(null);
@@ -251,6 +256,27 @@ export function ConsultasPage() {
     if (resultado.sucesso) mostrarToast('Bilhete integrado ao Protheus', 'sucesso');
     else mostrarToast(resultado.erro || 'O Protheus rejeitou novamente o Bilhete', 'erro');
     await carregar();
+  };
+
+  const salvarQuantidade = async (itemId: string) => {
+    if (!token || !detalhe || salvandoQuantidade) return;
+    const quantidade = Number(quantidadeEditada.replace(',', '.'));
+    if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade > 999999 || Math.abs(Math.round(quantidade * 1000) - quantidade * 1000) > 1e-7) {
+      mostrarToast('Informe uma quantidade positiva com até três casas decimais.', 'erro');
+      return;
+    }
+    const item = detalhe.itens.find((i) => i.id === itemId);
+    if (!item) return;
+    const novoTotal = detalhe.total - item.valorTotal + Math.round(quantidade * item.valorUnitario);
+    if (!window.confirm(`Confirme a quantidade realmente vendida de ${item.descricao}: ${item.quantidade} → ${quantidade}. O total passará de ${formatMoney(detalhe.total)} para ${formatMoney(novoTotal)}. Confira o valor cobrado do cliente antes de salvar. A venda não será reenviada automaticamente.`)) return;
+    setSalvandoQuantidade(true);
+    const resultado = await vendaService.editarQuantidadeRejeitada(detalhe.id, itemId, quantidade, token);
+    setSalvandoQuantidade(false);
+    if (!resultado.sucesso) return mostrarToast(resultado.erro || 'Não foi possível editar a quantidade.', 'erro');
+    setItemEmEdicao(null);
+    setDetalhe(await vendaService.buscarVenda(detalhe.id));
+    await carregar();
+    mostrarToast('Quantidade salva. Confira o total e clique em reenviar quando estiver correto.', 'sucesso');
   };
 
   // Os cards refletem todo o período selecionado; busca e status filtram apenas a lista.
@@ -454,7 +480,7 @@ export function ConsultasPage() {
                                 <CheckCheck size={16} />
                               </button>
                             )}
-                            {venda.statusProtheus === 'REJEITADO' && (
+                            {venda.statusProtheus === 'REJEITADO' && itemEmEdicao === null && (
                               <button
                                 onClick={(e) => reprocessar(e, venda)}
                                 className="p-2 rounded-lg text-amber-600 hover:text-amber-800 hover:bg-amber-50 transition-colors"
@@ -512,7 +538,21 @@ export function ConsultasPage() {
                                           <tr key={idx} className="border-t border-slate-100 even:bg-slate-50/50">
                                             <td className="py-2.5 px-4 text-slate-400">{item.codigo}</td>
                                             <td className="py-2.5 px-4 font-sans text-slate-800">{item.descricao}</td>
-                                            <td className="py-2.5 px-4 text-right">{item.quantidade}</td>
+                                            <td className="py-2.5 px-4 text-right">
+                                              {itemEmEdicao === item.id ? (
+                                                <span className="inline-flex items-center gap-1">
+                                                  <input aria-label={`Quantidade de ${item.descricao}`} type="number" min="0.001" max="999999" step="0.001" value={quantidadeEditada} onChange={(e) => setQuantidadeEditada(e.target.value)} className="w-24 rounded border border-blue-300 px-2 py-1 text-right" />
+                                                  <button type="button" disabled={salvandoQuantidade} onClick={() => void salvarQuantidade(item.id)} className="rounded bg-blue-600 px-2 py-1 font-sans text-white disabled:opacity-50">Salvar</button>
+                                                  <button type="button" onClick={() => setItemEmEdicao(null)} className="rounded px-2 py-1 font-sans text-slate-500">Cancelar</button>
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-2">{item.quantidade}
+                                                  {detalhe.statusProtheus === 'REJEITADO' && detalhe.tipoOperacao === 'PDV' && (
+                                                    <button type="button" onClick={() => { setItemEmEdicao(item.id); setQuantidadeEditada(String(item.quantidade)); }} title="Editar quantidade da venda rejeitada" className="text-blue-600 hover:text-blue-800"><Pencil size={14} /></button>
+                                                  )}
+                                                </span>
+                                              )}
+                                            </td>
                                             <td className="py-2.5 px-4 text-right">{formatMoney(item.valorUnitario)}</td>
                                             <td className="py-2.5 px-4 text-right font-bold">{formatMoney(item.valorTotal)}</td>
                                           </tr>
@@ -549,6 +589,14 @@ export function ConsultasPage() {
                                   {detalhe.totalAntesArredondamento != null && (
                                     <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
                                       Total ajustado por arredondamento dos itens: {formatMoney(detalhe.totalAntesArredondamento)} → {formatMoney(detalhe.total)}.
+                                    </div>
+                                  )}
+                                  {detalhe.edicoesQuantidade && detalhe.edicoesQuantidade.length > 0 && (
+                                    <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                                      <div className="mb-1 font-bold text-slate-700">Histórico de quantidades</div>
+                                      {detalhe.edicoesQuantidade.map((edicao, indice) => (
+                                        <div key={indice}>{edicao.codigo}: {edicao.quantidadeAnterior} → {edicao.quantidadeNova} · {formatMoney(edicao.totalAnterior)} → {formatMoney(edicao.totalNovo)} · {edicao.usuario} · {new Date(edicao.editadoEm).toLocaleString('pt-BR')}</div>
+                                      ))}
                                     </div>
                                   )}
                                 </>

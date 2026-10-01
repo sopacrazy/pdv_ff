@@ -50,6 +50,7 @@ export interface VendaResumo {
 
 export interface VendaDetalhe extends VendaResumo {
   dataLocal?: string;
+  edicoesQuantidade?: { codigo: string; quantidadeAnterior: number; quantidadeNova: number; totalAnterior: number; totalNovo: number; editadoEm: string; usuario: string }[];
   impressao?: {
     clienteFantasia?: string; clienteEndereco?: string; clienteCidade?: string;
     clienteRg?: string; clienteTelefone?: string; clienteFax?: string;
@@ -57,6 +58,7 @@ export interface VendaDetalhe extends VendaResumo {
     condicaoDescricao?: string; pesoTotal?: number;
   };
   itens: {
+    id: string;
     codigo: string;
     descricao: string;
     quantidade: number;
@@ -127,6 +129,20 @@ export const vendaService = {
     const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}`);
     if (!resp.ok) return null;
     return resp.json();
+  },
+
+  editarQuantidadeRejeitada: async (id: string, itemId: string, quantidade: number, token: string): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/itens/${encodeURIComponent(itemId)}/quantidade`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ quantidade }),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      return resp.ok ? { sucesso: true } : { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
   },
 
   // Manda imprimir direto na impressora térmica (ESC/POS via RAW print, ver

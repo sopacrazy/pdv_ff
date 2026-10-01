@@ -1064,6 +1064,12 @@ export function iniciarApi() {
     const venda = db.prepare('SELECT * FROM vendas WHERE id = ?').get(id);
     if (!venda) return null;
     const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(id);
+    const edicoesQuantidade = db.prepare(`SELECT e.quantidade_anterior, e.quantidade_nova, e.total_venda_anterior,
+      e.total_venda_novo, e.editado_em, i.codigo_produto, u.nome AS usuario_nome
+      FROM venda_edicoes_quantidade e
+      LEFT JOIN venda_itens i ON i.id=e.item_id
+      LEFT JOIN usuarios u ON u.id=e.usuario_id
+      WHERE e.venda_id=? ORDER BY e.editado_em DESC`).all(id);
     // Dados complementares disponíveis no cadastro sincronizado (não são um snapshot histórico).
     const cache = getProtheusCacheDb();
     const cliente = cache.prepare("SELECT fantasia, dados_json FROM clientes WHERE filial='01' AND codigo=? AND loja=? AND excluido=0")
@@ -1077,6 +1083,15 @@ export function iniciarApi() {
     return {
       ...paraVendaResumo(venda),
       dataLocal: venda.data_local,
+      edicoesQuantidade: edicoesQuantidade.map((edicao) => ({
+        codigo: edicao.codigo_produto,
+        quantidadeAnterior: edicao.quantidade_anterior,
+        quantidadeNova: edicao.quantidade_nova,
+        totalAnterior: edicao.total_venda_anterior,
+        totalNovo: edicao.total_venda_novo,
+        editadoEm: edicao.editado_em,
+        usuario: edicao.usuario_nome || 'Usuário',
+      })),
       impressao: {
         clienteFantasia: cliente?.fantasia || '',
         clienteEndereco: [textoCadastro('address'), textoCadastro('neighborhood')].filter(Boolean).join(' - '),
@@ -1088,6 +1103,7 @@ export function iniciarApi() {
         vendedorNome: venda.vendedor_nome ?? vendedor?.protheus_vend_nome ?? '',
       },
       itens: itens.map((item) => ({
+        id: item.id,
         codigo: item.codigo_produto,
         descricao: item.descricao,
         quantidade: item.quantidade,
@@ -1108,6 +1124,47 @@ export function iniciarApi() {
       return;
     }
     res.json(detalhe);
+  });
+
+  app.patch('/api/vendas/:id/itens/:itemId/quantidade', autenticarMiddleware, (req, res) => {
+    const db = getDb();
+    const quantidade = Number(req.body?.quantidade);
+    if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade > 999999 ||
+      Math.abs(Math.round(quantidade * 1000) - quantidade * 1000) > 1e-7) {
+      return res.status(400).json({ erro: 'Informe uma quantidade positiva com até três casas decimais.' });
+    }
+    try {
+      const resultado = db.transaction(() => {
+        const venda = db.prepare("SELECT * FROM vendas WHERE id=? AND deletado='' AND tipo_operacao='PDV' AND status_protheus='REJEITADO'").get(req.params.id);
+        if (!venda) return { http: 409, erro: 'Somente vendas PDV rejeitadas podem ter a quantidade editada.' };
+        const item = db.prepare('SELECT * FROM venda_itens WHERE id=? AND venda_id=?').get(req.params.itemId, venda.id);
+        if (!item) return { http: 404, erro: 'Item não encontrado nesta venda.' };
+        if (item.desconto || venda.desconto) return { http: 409, erro: 'Venda com desconto exige conferência manual.' };
+        if (item.quantidade === quantidade) return { http: 400, erro: 'A quantidade informada é igual à atual.' };
+        const totalItem = Math.round(quantidade * item.valor_unitario);
+        const totalVenda = db.prepare('SELECT COALESCE(SUM(valor_total),0) AS total FROM venda_itens WHERE venda_id=?').get(venda.id).total - item.valor_total + totalItem;
+        if (!Number.isSafeInteger(totalItem) || !Number.isSafeInteger(totalVenda) || totalVenda <= 0) return { http: 400, erro: 'Total calculado inválido.' };
+        if (venda.valor_recebido != null && venda.valor_recebido < totalVenda) {
+          return { http: 409, erro: 'O novo total supera o valor recebido em dinheiro. Confira o pagamento antes de editar.' };
+        }
+        const agora = new Date().toISOString();
+        const quantidade2 = item.quantidade2 == null ? null : Math.round(item.quantidade2 * quantidade / item.quantidade * 1000) / 1000;
+        db.prepare('UPDATE venda_itens SET quantidade=?, quantidade2=?, valor_total=? WHERE id=?').run(quantidade, quantidade2, totalItem, item.id);
+        db.prepare(`UPDATE vendas SET total=?, subtotal=?, troco=CASE WHEN valor_recebido IS NOT NULL THEN valor_recebido-? ELSE troco END,
+          editado_em=?, payload_protheus=NULL WHERE id=? AND status_protheus='REJEITADO'`)
+          .run(totalVenda, totalVenda, totalVenda, agora, venda.id);
+        db.prepare(`INSERT INTO venda_edicoes_quantidade
+          (id,venda_id,item_id,usuario_id,quantidade_anterior,quantidade_nova,total_item_anterior,total_item_novo,total_venda_anterior,total_venda_novo,editado_em)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(randomUUID(), venda.id, item.id, req.usuario.id, item.quantidade, quantidade, item.valor_total, totalItem, venda.total, totalVenda, agora);
+        return { http: 200, sucesso: true, total: totalVenda };
+      })();
+      const { http, ...corpo } = resultado;
+      res.status(http).json(corpo);
+    } catch (erro) {
+      console.error('[api] Falha ao editar quantidade rejeitada:', erro);
+      res.status(500).json({ erro: 'Não foi possível salvar a quantidade.' });
+    }
   });
 
   // Imprime direto na impressora térmica via ESC/POS em modo RAW (ver server/impressora-termica.js)
