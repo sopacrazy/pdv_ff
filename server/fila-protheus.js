@@ -1,5 +1,6 @@
 import { getDb } from './db.js';
 import { prepararVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
+import { calcularAjusteArredondamento } from './arredondamento-venda.js';
 import { pareceFalhaDeRede, descreverErro } from './protheus-4sales-test.js';
 import { validarContaRestPrincipal, credenciaisContaRestPrincipal } from './conta-rest-principal.js';
 import { consultarSituacaoBilhetes, situacaoBilhete, registrarExclusao } from './conferencia-bilhetes-protheus.js';
@@ -59,6 +60,20 @@ async function enviarVendaSerializada(db, vendaId, opcoes) {
       }
     }
     const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id = ?').all(venda.id);
+    const ajuste = calcularAjusteArredondamento(venda, itens);
+    if (ajuste) {
+      const atualizado = db.prepare(`UPDATE vendas SET total=?, subtotal=?,
+        total_antes_arredondamento=COALESCE(total_antes_arredondamento,total),
+        subtotal_antes_arredondamento=COALESCE(subtotal_antes_arredondamento,subtotal),
+        arredondamento_corrigido_em=?
+        WHERE id=? AND status_protheus='PREPARANDO' AND payload_protheus IS NULL`)
+        .run(ajuste.total, ajuste.subtotal, agora.toISOString(), venda.id);
+      if (atualizado.changes) {
+        console.log(`[fila-protheus] Cupom ${venda.numero_cupom}: total arredondado por item de ${venda.total} para ${ajuste.total} centavos.`);
+        venda.total = ajuste.total;
+        venda.subtotal = ajuste.subtotal;
+      }
+    }
     // Vendas novas guardam a chave estável do usuário autenticado. A busca por nome existe apenas
     // para vendas antigas, criadas antes da coluna usuario_id; nomes podem mudar ou se repetir.
     let vendedor = venda.vendedor_codigo && venda.vendedor_filial

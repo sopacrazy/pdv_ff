@@ -17,7 +17,8 @@ function criarDb() {
       editado_em TEXT, bilhete_protheus TEXT, resultado_protheus TEXT, payload_protheus TEXT,
       protheus_atualizado_em TEXT, id_integracao TEXT, tipo_operacao TEXT NOT NULL DEFAULT 'PDV',
       vendedor_filial TEXT, vendedor_codigo TEXT, vendedor_nome TEXT, protheus_usr_id TEXT,
-      protheus_conferido_em TEXT, protheus_excluido_em TEXT, protheus_status_antes_exclusao TEXT
+      protheus_conferido_em TEXT, protheus_excluido_em TEXT, protheus_status_antes_exclusao TEXT,
+      total_antes_arredondamento REAL, subtotal_antes_arredondamento REAL, arredondamento_corrigido_em TEXT
     );
     CREATE TABLE venda_itens (
       id TEXT PRIMARY KEY, venda_id TEXT NOT NULL, codigo_produto TEXT, descricao TEXT,
@@ -313,5 +314,30 @@ test('reenvio preserva ID e vendedor do payload anterior mesmo depois de mudanç
     return base(url, opcoes);
   };
   assert.equal((await enviarVendaAoProtheus(db,'v1')).sucesso,true);
+  db.close();
+}));
+
+test('venda PDV antiga corrige apenas arredondamento de linhas e preserva total anterior', () => comCredenciais(async () => {
+  const db = criarDb(); inserirVenda(db, 'kg-1');
+  db.prepare("UPDATE vendas SET total=2386.3, subtotal=2386.3 WHERE id='kg-1'").run();
+  db.prepare("UPDATE venda_itens SET codigo_produto='217.050', quantidade=0.71, valor_unitario=1350, valor_total=959 WHERE venda_id='kg-1'").run();
+  db.prepare("INSERT INTO venda_itens (id,venda_id,codigo_produto,descricao,quantidade,valor_unitario,desconto,valor_total) VALUES ('kg-2','kg-1','210.025','MELANCIA',2.42,590,0,1428)").run();
+  const fetchBase = mockFetchSucessoGenerico();
+  let valorEnviado;
+  globalThis.fetch = (url, opcoes) => {
+    if (String(url).includes('itensTablePrice')) return Promise.resolve(new Response(JSON.stringify({ items: [
+      { itemCode: '217.050', activeItemPrice: '1', minimumSalesPrice: 13.5 },
+      { itemCode: '210.025', activeItemPrice: '1', minimumSalesPrice: 5.9 },
+    ], hasNext: false }), { status: 200 }));
+    if (String(url) === URL_TESTE_4SALES) valorEnviado = JSON.parse(opcoes.body).value;
+    return fetchBase(url, opcoes);
+  };
+  assert.equal((await enviarVendaAoProtheus(db, 'kg-1')).sucesso, true);
+  const venda = db.prepare('SELECT total, subtotal, total_antes_arredondamento, arredondamento_corrigido_em FROM vendas WHERE id=?').get('kg-1');
+  assert.equal(venda.total, 2387);
+  assert.equal(venda.subtotal, 2387);
+  assert.equal(venda.total_antes_arredondamento, 2386.3);
+  assert.ok(venda.arredondamento_corrigido_em);
+  assert.equal(valorEnviado, 23.87);
   db.close();
 }));

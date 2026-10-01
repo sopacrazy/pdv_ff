@@ -546,6 +546,11 @@ export function ConsultasPage() {
                                       Retorno do Protheus: {detalhe.resultadoProtheus.erro}
                                     </div>
                                   )}
+                                  {detalhe.totalAntesArredondamento != null && (
+                                    <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
+                                      Total ajustado por arredondamento dos itens: {formatMoney(detalhe.totalAntesArredondamento)} → {formatMoney(detalhe.total)}.
+                                    </div>
+                                  )}
                                 </>
                               )}
                             </div>

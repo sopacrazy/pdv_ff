@@ -290,6 +290,12 @@ export function getDb() {
     garantirColuna(instancia, 'vendas', 'protheus_status_antes_exclusao', 'TEXT');
   });
 
+  aplicarMigracao(instancia, 8, 'Histórico da correção de arredondamento das vendas PDV', () => {
+    garantirColuna(instancia, 'vendas', 'total_antes_arredondamento', 'REAL');
+    garantirColuna(instancia, 'vendas', 'subtotal_antes_arredondamento', 'REAL');
+    garantirColuna(instancia, 'vendas', 'arredondamento_corrigido_em', 'TEXT');
+  });
+
   // Recupera o `_id` exato de vendas que já tiveram tentativa de envio antes da criação da coluna.
   // Para vendas nunca enviadas, monta o formato novo a partir dos dados locais já persistidos.
   const vendasSemIdIntegracao = instancia.prepare(`

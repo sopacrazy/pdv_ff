@@ -45,6 +45,19 @@ test('contas sem senha REST individual podem vender e guardam seu vendedor sem a
   assert.equal(detalhe.corpo.impressao.vendedorNome,'Vendedor 1');
 });
 
+test('API salva venda PDV pelo total de cada item arredondado, mesmo com frontend antigo', async () => {
+  db.prepare("UPDATE usuarios SET protheus_vend_codigo='000001', protheus_vend_nome='Vendedor 1' WHERE id='u1'").run();
+  const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
+    subtotal: 2386.3, desconto: 0, total: 2386.3, formaPagamento: '001',
+    itens: [
+      { produto: { codigo: '217.050', descricao: 'TANGERINA', unidade: 'KG' }, quantidade: 0.71, valorUnitario: 1350, valorTotal: 959, desconto: 0 },
+      { produto: { codigo: '210.025', descricao: 'MELANCIA', unidade: 'KG' }, quantidade: 2.42, valorUnitario: 590, valorTotal: 1428, desconto: 0 },
+    ] };
+  const resposta = await json('/api/vendas', 'token1', venda);
+  assert.equal(resposta.status, 200, JSON.stringify(resposta.corpo));
+  assert.deepEqual(db.prepare('SELECT subtotal, total FROM vendas WHERE id=?').get(resposta.corpo.id), { subtotal: 2387, total: 2387 });
+});
+
 test('localizar vendedor usa o cadastro sincronizado e não autentica o operador no REST', async () => {
   globalThis.fetch=async()=>{throw new Error('A localização não deve acessar REST');};
   try {

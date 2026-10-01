@@ -28,6 +28,8 @@ export interface VendaResumo {
   subtotal: number;
   desconto: number;
   total: number;
+  totalAntesArredondamento?: number | null;
+  arredondamentoCorrigidoEm?: string | null;
   formaPagamento: string;
   criadoEm: string;
   dataLocal?: string;

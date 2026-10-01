@@ -1,5 +1,6 @@
 import { usePdvStore } from '../../store/pdvStore';
 import { formatMoney } from '../../utils/formatters';
+import { calcularTotaisVenda } from '../../utils/totaisVenda';
 import { User } from 'lucide-react';
 import fortfruitLogo from '@/fortfruit-logo.png';
 
@@ -8,9 +9,7 @@ export const PainelTotais = () => {
   const clienteExibido = cliente || clientePadrao;
 
   const totalItens = itens.reduce((acc, i) => acc + i.quantidade, 0);
-  const subtotal = itens.reduce((acc, i) => acc + i.quantidade * i.valorUnitario, 0);
-  const totalDescontos = itens.reduce((acc, i) => acc + i.desconto, 0);
-  const total = subtotal - totalDescontos;
+  const { subtotal, desconto: totalDescontos, total } = calcularTotaisVenda(itens);
 
   return (
     <div className="pdv-summary shrink-0 bg-slate-50 flex flex-col border-l border-slate-200 h-full min-h-0">

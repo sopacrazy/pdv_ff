@@ -1,5 +1,9 @@
 # Atualizações do PDV Fort Fruit
 
+## Arredondamento de vendas fracionadas — versão 0.1.21
+
+O total das novas vendas PDV é a soma dos valores já arredondados de cada item. Para vendas locais antigas ainda pendentes, a fila corrige diferenças de centavos somente quando elas correspondem ao cálculo anterior; o total original fica registrado e aparece em Consultas. Após instalar na máquina com vendas pendentes, confira o resultado da integração em Consultas.
+
 ## Correção da abertura e envio do PDV — versão 0.1.20
 
 O cadastro REST do cliente padrão pode omitir `paymentForm`. As vendas do PDV passam a enviar a condição de pagamento sem exigir os campos de forma do cliente; o Bilhete continua usando `A1_FORMA`. A fila preserva os identificadores das vendas pendentes e as retenta automaticamente. Se a janela do Electron falhar ao carregar, o aplicativo faz uma nova tentativa e mostra o erro em vez de permanecer na tela inicial.

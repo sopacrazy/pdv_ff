@@ -1,4 +1,14 @@
-# PDV Fort Fruit 0.1.20
+# PDV Fort Fruit 0.1.21
+
+- Corrige o total das novas vendas com itens fracionados: soma os valores já arredondados de cada linha, como no Protheus.
+- Ao reenviar vendas PDV antigas ainda pendentes, corrige somente diferenças comprovadamente causadas por esse arredondamento e registra o total anterior no histórico da venda.
+- Diferenças de outra origem continuam bloqueadas para conferência. As vendas pendentes seguem na fila automática.
+
+Finalize ou cancele o cupom aberto antes de instalar. Na máquina com vendas pendentes, a fila tentará enviá-las ao Protheus após a atualização. Confira o resultado em **Consultas**.
+
+Validação: testes locais, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
+
+## Alterações mantidas da versão 0.1.20
 
 - Corrige o envio de vendas do **PDV** quando o cliente REST não informa `paymentForm`: esses campos deixam de ser exigidos e enviados no pedido PDV.
 - Mantém o identificador das vendas pendentes e a fila automática de reenvio.

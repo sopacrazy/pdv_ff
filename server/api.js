@@ -78,6 +78,8 @@ function paraVendaResumo(linha) {
     subtotal: linha.subtotal,
     desconto: linha.desconto,
     total: linha.total,
+    totalAntesArredondamento: linha.total_antes_arredondamento ?? null,
+    arredondamentoCorrigidoEm: linha.arredondamento_corrigido_em || null,
     formaPagamento: linha.forma_pagamento,
     criadoEm: linha.criado_em,
     editadoEm: linha.editado_em,
@@ -921,6 +923,19 @@ export function iniciarApi() {
       venda.cliente.nome = clienteAVista ? String(venda.cliente?.nomeAvista || venda.cliente?.nomeAVista || '').trim().toUpperCase() : clienteCache.nome;
       venda.cliente.cpf = clienteCache.cpf_cnpj;
       venda.cliente.tabelaPreco = clienteCache.tabela_preco;
+    } else {
+      const itemInvalido = venda.itens.find((item) =>
+        !Number.isFinite(item.quantidade) || item.quantidade <= 0 ||
+        !Number.isSafeInteger(item.valorUnitario) || !Number.isSafeInteger(item.desconto || 0) ||
+        !Number.isSafeInteger(item.valorTotal) ||
+        Math.round(item.quantidade * item.valorUnitario) - (item.desconto || 0) !== item.valorTotal
+      );
+      if (itemInvalido) return res.status(400).json({ erro: 'Total de item inválido. Confira os valores da venda.' });
+      // A soma deve usar os centavos já arredondados em cada linha, como no cupom e no Protheus.
+      // Somar quantidades x preços antes de arredondar pode diferir em um centavo com itens KG.
+      venda.desconto = venda.itens.reduce((soma, item) => soma + (item.desconto || 0), 0);
+      venda.total = venda.itens.reduce((soma, item) => soma + item.valorTotal, 0);
+      venda.subtotal = venda.total + venda.desconto;
     }
     const agora = new Date();
     const id = randomUUID();

@@ -6,6 +6,7 @@ import { useToastStore } from './toastStore';
 import { vendaService } from '../services/vendaService';
 import { caixaService } from '../services/caixaService';
 import { paraPrimeiraUnidade } from '../utils/unidades';
+import { calcularTotaisVenda } from '../utils/totaisVenda';
 
 export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO';
 
@@ -219,9 +220,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
     const { cupomNumero, itens, cliente, clientePadrao } = get();
     const { loja, caixa, token } = useAuthStore.getState();
 
-    const subtotal = itens.reduce((acc, i) => acc + i.quantidade * i.valorUnitario, 0);
-    const desconto = itens.reduce((acc, i) => acc + i.desconto, 0);
-    const total = subtotal - desconto;
+    const { subtotal, desconto, total } = calcularTotaisVenda(itens);
 
     const payload = {
       numeroCupom: cupomNumero,
