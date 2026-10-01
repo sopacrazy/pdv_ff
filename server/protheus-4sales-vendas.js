@@ -113,10 +113,16 @@ export async function prepararVenda4Sales(venda, itens, vendedor, opcoes) {
   const timeoutMs = opcoes?.timeoutMs;
   const codigoCliente = String(venda.cliente_codigo || 'YDOVT3').trim();
   const lojaCliente = String(venda.cliente_loja || '01').trim();
-  const [cadastro, forma] = await Promise.all([
-    consultar(`api/tgv/customers/${encodeURIComponent(codigoCliente)}/${encodeURIComponent(lojaCliente)}`, timeoutMs),
-    consultarFormaPagamentoCliente(codigoCliente, lojaCliente, { timeoutMs }),
-  ]);
+  const cadastro = await consultar(`api/tgv/customers/${encodeURIComponent(codigoCliente)}/${encodeURIComponent(lojaCliente)}`, timeoutMs);
+  // O PDV envia pelo cadastro REST. A forma de pagamento do Bilhete precisa refletir A1_FORMA,
+  // que neste ambiente já divergiu do paymentForm devolvido pela REST.
+  const forma = venda.tipo_operacao === 'BILHETE'
+    ? await consultarFormaPagamentoCliente(codigoCliente, lojaCliente, { timeoutMs })
+    : {
+      codigo: String(cadastro.paymentForm || cadastro.paymentMethods?.id || '').trim(),
+      descricao: String(cadastro.paymentMethods?.name || cadastro.paymentForm || '').trim(),
+    };
+  if (!forma.codigo) throw new Error(`Cliente ${codigoCliente}/${lojaCliente} sem forma de pagamento na REST.`);
   const cliente = { ...cadastro, formaPagamento: forma.codigo, formaPagamentoDescricao: forma.descricao };
   const tabelaCliente = String(venda.tabela_preco || cliente.pricelist?.id || cliente.pricelist || '015').trim();
   const precos = [];

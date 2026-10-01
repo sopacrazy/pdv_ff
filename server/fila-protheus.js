@@ -49,8 +49,9 @@ async function enviarVendaSerializada(db, vendaId, opcoes) {
   let preparado;
   let credenciaisProtheus;
   try {
-    // Antes de repetir uma tentativa, verifica se o ERP já excluiu o documento.
-    if (venda.payload_protheus || venda.bilhete_protheus) {
+    // Bilhetes conferem uma exclusão antes do reenvio. O PDV usa somente a REST neste fluxo;
+    // seu status EXCLUIDO_PROTHEUS continua bloqueando qualquer tentativa acima.
+    if (venda.tipo_operacao === 'BILHETE' && (venda.payload_protheus || venda.bilhete_protheus)) {
       const situacao = situacaoBilhete(venda, await consultarSituacaoBilhetes([venda]));
       if (situacao.situacao === 'EXCLUIDO') {
         registrarExclusao(db, venda, situacao, agora.toISOString(), 'PREPARANDO');

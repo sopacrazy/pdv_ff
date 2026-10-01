@@ -60,7 +60,7 @@ function mockFetchSucesso() {
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }
     if (href.includes('customers/YDOVT3/01')) {
-      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste' }), { status: 200 });
+      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste', paymentForm: 'BOL', paymentMethods: { id: 'BOL ', name: 'BOLETO' } }), { status: 200 });
     }
     if (href.includes('itensTablePrice')) {
       return new Response(JSON.stringify({ items: [{ itemCode: '199.029 ', activeItemPrice: '1', minimumSalesPrice: 165 }], hasNext: false }), { status: 200 });
@@ -80,7 +80,7 @@ function mockFetchSucessoGenerico() {
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }
     if (href.includes('customers/YDOVT3/01')) {
-      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste' }), { status: 200 });
+      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste', paymentForm: 'BOL', paymentMethods: { id: 'BOL ', name: 'BOLETO' } }), { status: 200 });
     }
     if (href.includes('itensTablePrice')) {
       return new Response(JSON.stringify({ items: [{ itemCode: '199.029 ', activeItemPrice: '1', minimumSalesPrice: 165 }], hasNext: false }), { status: 200 });
@@ -301,6 +301,7 @@ test('dois vendedores enviam pela mesma conta REST, com um POST por vez e snapsh
 
 test('reenvio preserva ID e vendedor do payload anterior mesmo depois de mudança do cadastro', () => comCredenciais(async () => {
   const db = criarDb(); inserirVenda(db,'v1');
+  sql.ConnectionPool = class { constructor() { throw new Error('Reenvio PDV não deve consultar SQL'); } };
   db.prepare("UPDATE vendas SET id_integracao='id-anterior',payload_protheus=?,vendedor_codigo='000013' WHERE id='v1'")
     .run(JSON.stringify({body:{_id:'id-original',seller:{id:'000090',name:'Original'}}}));
   const base = mockFetchSucessoGenerico();

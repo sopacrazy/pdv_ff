@@ -1,5 +1,9 @@
 # Atualizações do PDV Fort Fruit
 
+## Envio do PDV pela REST — versão 0.1.19
+
+Vendas do PDV usam a forma de pagamento retornada pelo cadastro REST do cliente e não precisam abrir conexão SQL Server para preparar ou reenviar o pedido. O Bilhete continua consultando `A1_FORMA` no SQL Server, pois a forma da REST pode divergir desse cadastro. Vendas locais pendentes permanecem na fila e são retomadas automaticamente.
+
 ## Consulta de vendas por período — versão 0.1.18
 
 Em **Consultas**, selecione **Período** e informe as datas inicial e final. A lista inclui as vendas dos dois dias escolhidos e mostra a data de operação de cada registro. Os indicadores de quantidade, total vendido e ticket médio acompanham o período. **Dia de operação** continua sendo a opção padrão. O intervalo é validado antes da consulta.

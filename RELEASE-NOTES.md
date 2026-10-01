@@ -1,4 +1,15 @@
-# PDV Fort Fruit 0.1.18
+# PDV Fort Fruit 0.1.19
+
+- O envio de vendas do **PDV** usa a forma de pagamento recebida pela API REST e deixa de depender da conexão SQL Server na porta 1433.
+- O reenvio das vendas PDV pendentes também segue pela REST, preservando o identificador da venda.
+- O fluxo de **Bilhete** mantém a consulta de `A1_FORMA` no SQL Server, pois esse dado pode divergir do cadastro REST.
+- Mantém as correções das versões anteriores.
+
+Finalize ou cancele o cupom aberto antes de instalar. Use **Ajuda → Verificar atualizações agora** nas máquinas configuradas. As vendas pendentes no PDV serão retomadas pela fila de envio.
+
+Validação: 88 testes locais, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
+
+## Alterações mantidas da versão 0.1.18
 
 - Em **Consultas**, permite escolher **Período** e informar data inicial e final para buscar vendas de vários dias.
 - Mostra a data de cada venda no resultado e atualiza os totais conforme o período escolhido.

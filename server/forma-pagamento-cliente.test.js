@@ -68,7 +68,7 @@ test('preparação usa A1_FORMA do SQL apesar de forma conflitante na REST; faz 
     return new Response(JSON.stringify(resposta), { status: 200 });
   };
   try {
-    const p = await prepararVenda4Sales({ numero_cupom: '1', caixa: '001', cliente_codigo: '374093', cliente_loja: '01',
+    const p = await prepararVenda4Sales({ numero_cupom: '1', caixa: '001', tipo_operacao: 'BILHETE', cliente_codigo: '374093', cliente_loja: '01',
       tabela_preco: '006', forma_pagamento: '008', total: 12500, desconto: 0, criado_em: '2026-09-30T12:00:00Z', data_local: '2026-09-30' },
       [{ codigo_produto: '134.026', descricao: 'BATATA', quantidade: 1, valor_unitario: 12500, valor_total: 12500, desconto: 0 }],
       { protheus_usr_id: '163', protheus_vend_codigo: '000068' });
@@ -81,3 +81,25 @@ test('preparação usa A1_FORMA do SQL apesar de forma conflitante na REST; faz 
     assert.equal(estado.consultas.length, 1);
   } finally { globalThis.fetch = original; }
 }));
+
+test('preparação de venda PDV usa a forma da REST sem abrir conexão SQL', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalPool = sql.ConnectionPool;
+  sql.ConnectionPool = class { constructor() { throw new Error('PDV não deve consultar SQL'); } };
+  globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).includes('customers/')
+    ? { code: 'YDOVT3', store: '01', pricelist: '015', paymentForm: 'DEP', paymentMethods: { id: 'DEP ', name: 'DEPOSITO' } }
+    : { items: [{ itemCode: '134.026', activeItemPrice: '1', minimumSalesPrice: 125 }], hasNext: false }), { status: 200 });
+  try {
+    const preparado = await prepararVenda4Sales({ numero_cupom: '1', caixa: '001', tipo_operacao: 'PDV',
+      cliente_codigo: 'YDOVT3', cliente_loja: '01', tabela_preco: '015', forma_pagamento: '008',
+      total: 12500, desconto: 0, criado_em: '2026-09-30T12:00:00Z', data_local: '2026-09-30' },
+    [{ codigo_produto: '134.026', descricao: 'BATATA', quantidade: 1, valor_unitario: 12500, valor_total: 12500, desconto: 0 }],
+    { protheus_usr_id: '163', protheus_vend_codigo: '000068' });
+    assert.equal(preparado.body.paymentForm, 'DEP');
+    assert.deepEqual(preparado.body.paymentMethods, { id: 'DEP ', name: 'DEPOSITO' });
+    assert.equal(preparado.body.paymentType.id, '008');
+  } finally {
+    globalThis.fetch = originalFetch;
+    sql.ConnectionPool = originalPool;
+  }
+});

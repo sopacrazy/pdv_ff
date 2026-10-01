@@ -11,7 +11,8 @@ function criarDb() {
   const db = new Database(':memory:');
   db.exec(`CREATE TABLE vendas (id TEXT PRIMARY KEY, status_protheus TEXT, bilhete_protheus TEXT, id_integracao TEXT,
     deletado TEXT DEFAULT '', criado_em TEXT, protheus_conferido_em TEXT, protheus_excluido_em TEXT,
-    protheus_status_antes_exclusao TEXT, protheus_atualizado_em TEXT, payload_protheus TEXT, resultado_protheus TEXT, total INTEGER);
+    protheus_status_antes_exclusao TEXT, protheus_atualizado_em TEXT, payload_protheus TEXT, resultado_protheus TEXT, total INTEGER,
+    tipo_operacao TEXT DEFAULT 'BILHETE');
     CREATE TABLE venda_itens (id TEXT, venda_id TEXT, valor_total INTEGER);`);
   db.prepare(`INSERT INTO vendas (id,status_protheus,bilhete_protheus,id_integracao,criado_em,total,payload_protheus,resultado_protheus)
     VALUES ('v1','INTEGRADO','SAS001','pdv-id-1','2026-09-30T12:00:00Z',12500,?,?)`)
