@@ -66,9 +66,13 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
   // Sem descrição/portions/averageDays reais sincronizados do Protheus ainda — usando o próprio código como nome.
   const condicaoPagamento = venda.forma_pagamento.trim();
   const paymentType = { id: condicaoPagamento, name: condicaoPagamento, paymentType: '1', portions: 1, averageDays: 1, financialAddition: 0, financialDiscount: 0, maximumValue: 0, minimumValue: 0, paymentMoreBusiness: false };
-  const formaPagamento = String(cliente.formaPagamento || '').trim();
-  if (!formaPagamento) throw new Error(`Cliente ${codigoCliente}/${lojaCliente} sem forma de pagamento (A1_FORMA). Confira o cadastro no Protheus.`);
-  const paymentMethods = { id: formaPagamento.padEnd(4, ' '), name: cliente.formaPagamentoDescricao || formaPagamento };
+  const ehBilhete = venda.tipo_operacao === 'BILHETE';
+  const formaPagamento = ehBilhete ? String(cliente.formaPagamento || '').trim() : '';
+  if (ehBilhete && !formaPagamento) throw new Error(`Cliente ${codigoCliente}/${lojaCliente} sem forma de pagamento (A1_FORMA). Confira o cadastro no Protheus.`);
+  const dadosFormaPagamento = ehBilhete ? {
+    paymentMethods: { id: formaPagamento.padEnd(4, ' '), name: cliente.formaPagamentoDescricao || formaPagamento },
+    paymentForm: formaPagamento,
+  } : {};
   const clientePayload = {
     _id: cliente.id || `${codigoClientePayload}${lojaCliente}`,
     externalCode: codigoClientePayload,
@@ -77,8 +81,7 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
     ...(cliente.shortName || cliente.fantasy ? { shortName: String(cliente.shortName || cliente.fantasy).trim() } : {}),
     priceTable,
     paymentType,
-    paymentMethods,
-    paymentForm: formaPagamento,
+    ...dadosFormaPagamento,
     seller,
   };
   // A conta técnica REST não tem vínculo SA3; seller identifica o operador da venda.
@@ -100,7 +103,7 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
     ...(clienteAVista ? { clientName: nomeClienteBilhete } : {}),
     subsidiary: { id: tenant, name: 'Operacao', companyName: 'FORT FRUIT LTDA' },
     client: clientePayload,
-    seller, priceTable, paymentType, paymentMethods, paymentForm: formaPagamento, items,
+    seller, priceTable, paymentType, ...dadosFormaPagamento, items,
     currency: { currency: 'BRL', id: '1', locale: 'pt-BR', name: 'REAL' }, currencyConvert: false, currencyValue: 0,
     value: venda.total / 100, productsValue: venda.total / 100, productsValueWithDiscount: venda.total / 100,
     quantity: itens.reduce((s, i) => s + i.quantidade, 0), addition: 0, additions: [], discount: 0, discountPercent: 0, discounts: [], financialAddition: 0, financialDiscount: 0,
@@ -114,16 +117,11 @@ export async function prepararVenda4Sales(venda, itens, vendedor, opcoes) {
   const codigoCliente = String(venda.cliente_codigo || 'YDOVT3').trim();
   const lojaCliente = String(venda.cliente_loja || '01').trim();
   const cadastro = await consultar(`api/tgv/customers/${encodeURIComponent(codigoCliente)}/${encodeURIComponent(lojaCliente)}`, timeoutMs);
-  // O PDV envia pelo cadastro REST. A forma de pagamento do Bilhete precisa refletir A1_FORMA,
-  // que neste ambiente já divergiu do paymentForm devolvido pela REST.
+  // Somente o Bilhete exige A1_FORMA; o PDV envia a condição de pagamento sem esses campos.
   const forma = venda.tipo_operacao === 'BILHETE'
     ? await consultarFormaPagamentoCliente(codigoCliente, lojaCliente, { timeoutMs })
-    : {
-      codigo: String(cadastro.paymentForm || cadastro.paymentMethods?.id || '').trim(),
-      descricao: String(cadastro.paymentMethods?.name || cadastro.paymentForm || '').trim(),
-    };
-  if (!forma.codigo) throw new Error(`Cliente ${codigoCliente}/${lojaCliente} sem forma de pagamento na REST.`);
-  const cliente = { ...cadastro, formaPagamento: forma.codigo, formaPagamentoDescricao: forma.descricao };
+    : null;
+  const cliente = forma ? { ...cadastro, formaPagamento: forma.codigo, formaPagamentoDescricao: forma.descricao } : cadastro;
   const tabelaCliente = String(venda.tabela_preco || cliente.pricelist?.id || cliente.pricelist || '015').trim();
   const precos = [];
   for (let page = 1; page <= 100; page++) {

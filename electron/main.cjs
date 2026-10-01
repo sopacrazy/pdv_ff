@@ -294,20 +294,30 @@ async function criarJanela() {
     },
   });
 
-  const prontoParaMostrar = new Promise((resolve) => {
-    janelaPrincipal.once('ready-to-show', () => {
-      janelaPrincipal.maximize();
-      janelaPrincipal.show();
-      resolve();
-    });
-  });
-
   janelaPrincipal.on('closed', () => {
     janelaPrincipal = null;
   });
 
-  await janelaPrincipal.loadURL(`http://localhost:${PORTA}`);
-  await prontoParaMostrar;
+  for (let tentativa = 1; tentativa <= 2; tentativa += 1) {
+    let temporizador;
+    try {
+      await Promise.race([
+        janelaPrincipal.loadURL(`http://localhost:${PORTA}`),
+        new Promise((_, reject) => {
+          temporizador = setTimeout(() => reject(new Error('A janela do PDV não carregou em 30 segundos.')), 30000);
+        }),
+      ]);
+      break;
+    } catch (erro) {
+      console.error(`[electron] Tentativa ${tentativa} de abrir a janela falhou:`, erro);
+      if (tentativa === 2) throw erro;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } finally {
+      clearTimeout(temporizador);
+    }
+  }
+  janelaPrincipal.maximize();
+  janelaPrincipal.show();
 }
 
 app.whenReady().then(async () => {
@@ -350,7 +360,16 @@ app.whenReady().then(async () => {
     return;
   }
 
-  await criarJanela();
+  try {
+    await criarJanela();
+  } catch (erro) {
+    console.error('[electron] Falha ao abrir a janela principal:', erro);
+    fecharSplash();
+    if (janelaPrincipal && !janelaPrincipal.isDestroyed()) janelaPrincipal.destroy();
+    dialog.showErrorBox('PDV Fort Fruit', `Não foi possível abrir a janela principal: ${erro?.message || erro}`);
+    app.quit();
+    return;
+  }
   fecharSplash();
 
   configurarAutoUpdate();

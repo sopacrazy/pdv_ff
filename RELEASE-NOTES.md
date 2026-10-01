@@ -1,4 +1,15 @@
-# PDV Fort Fruit 0.1.19
+# PDV Fort Fruit 0.1.20
+
+- Corrige o envio de vendas do **PDV** quando o cliente REST não informa `paymentForm`: esses campos deixam de ser exigidos e enviados no pedido PDV.
+- Mantém o identificador das vendas pendentes e a fila automática de reenvio.
+- A abertura do Electron tenta carregar a janela novamente após uma falha e mostra o erro se não conseguir, em vez de permanecer indefinidamente na tela inicial.
+- O **Bilhete** mantém a forma de pagamento consultada em `A1_FORMA`.
+
+Finalize ou cancele o cupom aberto antes de instalar. Na máquina com vendas pendentes, a fila tentará enviá-las ao Protheus após a atualização. Os dados locais são preservados.
+
+Validação: 88 testes locais, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
+
+## Alterações mantidas da versão 0.1.19
 
 - O envio de vendas do **PDV** usa a forma de pagamento recebida pela API REST e deixa de depender da conexão SQL Server na porta 1433.
 - O reenvio das vendas PDV pendentes também segue pela REST, preservando o identificador da venda.

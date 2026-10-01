@@ -1,5 +1,9 @@
 # Atualizações do PDV Fort Fruit
 
+## Correção da abertura e envio do PDV — versão 0.1.20
+
+O cadastro REST do cliente padrão pode omitir `paymentForm`. As vendas do PDV passam a enviar a condição de pagamento sem exigir os campos de forma do cliente; o Bilhete continua usando `A1_FORMA`. A fila preserva os identificadores das vendas pendentes e as retenta automaticamente. Se a janela do Electron falhar ao carregar, o aplicativo faz uma nova tentativa e mostra o erro em vez de permanecer na tela inicial.
+
 ## Envio do PDV pela REST — versão 0.1.19
 
 Vendas do PDV usam a forma de pagamento retornada pelo cadastro REST do cliente e não precisam abrir conexão SQL Server para preparar ou reenviar o pedido. O Bilhete continua consultando `A1_FORMA` no SQL Server, pois a forma da REST pode divergir desse cadastro. Vendas locais pendentes permanecem na fila e são retomadas automaticamente.

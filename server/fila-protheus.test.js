@@ -60,7 +60,7 @@ function mockFetchSucesso() {
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }
     if (href.includes('customers/YDOVT3/01')) {
-      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste', paymentForm: 'BOL', paymentMethods: { id: 'BOL ', name: 'BOLETO' } }), { status: 200 });
+      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste' }), { status: 200 });
     }
     if (href.includes('itensTablePrice')) {
       return new Response(JSON.stringify({ items: [{ itemCode: '199.029 ', activeItemPrice: '1', minimumSalesPrice: 165 }], hasNext: false }), { status: 200 });
@@ -80,7 +80,7 @@ function mockFetchSucessoGenerico() {
       return new Response(JSON.stringify({ items: [] }), { status: 200 });
     }
     if (href.includes('customers/YDOVT3/01')) {
-      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste', paymentForm: 'BOL', paymentMethods: { id: 'BOL ', name: 'BOLETO' } }), { status: 200 });
+      return new Response(JSON.stringify({ code: 'YDOVT3', store: '01', pricelist: '015', name: 'Cliente Teste' }), { status: 200 });
     }
     if (href.includes('itensTablePrice')) {
       return new Response(JSON.stringify({ items: [{ itemCode: '199.029 ', activeItemPrice: '1', minimumSalesPrice: 165 }], hasNext: false }), { status: 200 });

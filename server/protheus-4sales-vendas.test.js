@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { montarVenda4Sales, enviarVenda4Sales } from './protheus-4sales-vendas.js';
 import { montarIdIntegracao } from './id-integracao.js';
-const venda = { id: 'pdv-test-123', numero_cupom: '37', caixa: '001', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z', data_local: '2026-09-22' };
+const venda = { id: 'pdv-test-123', numero_cupom: '37', caixa: '001', tipo_operacao: 'BILHETE', forma_pagamento: '033', total: 33000, desconto: 0, criado_em: '2026-09-22T12:00:00Z', data_local: '2026-09-22' };
 const itens = [{ codigo_produto: '199.029', descricao: 'MACA', quantidade: 2, valor_unitario: 16500, valor_total: 33000, desconto: 0 }];
 const vendedor = { protheus_usr_id: '163', protheus_vend_codigo: '000090' };
 const cliente = { code: 'YDOVT3', store: '01', pricelist: '015', formaPagamento: 'BOL', formaPagamentoDescricao: 'BOLETO' };
