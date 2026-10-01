@@ -7,6 +7,7 @@ import { vendaService } from '../services/vendaService';
 import { caixaService } from '../services/caixaService';
 import { paraPrimeiraUnidade } from '../utils/unidades';
 import { calcularTotaisVenda } from '../utils/totaisVenda';
+import { calcularTotalItem } from '../utils/totalItem';
 
 export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO';
 
@@ -118,7 +119,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       novaLista[existenteIndex] = {
         ...item,
         quantidade: novaQtd,
-        valorTotal: Math.round(novaQtd * item.valorUnitario - item.desconto),
+        valorTotal: calcularTotalItem(item.produto, novaQtd, item.valorUnitario, item.desconto),
       };
       set({ itens: novaLista, itemSelecionadoId: item.id });
     } else {
@@ -129,7 +130,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
         quantidade,
         valorUnitario: valorUnitarioCents,
         desconto: 0,
-        valorTotal: Math.round(quantidade * valorUnitarioCents),
+        valorTotal: calcularTotalItem(produto, quantidade, valorUnitarioCents),
       };
       set({ itens: [...itens, novoItem], itemSelecionadoId: novoItem.id });
     }
@@ -144,7 +145,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
         return {
           ...item,
           quantidade,
-          valorTotal: Math.round(quantidade * item.valorUnitario - item.desconto),
+          valorTotal: calcularTotalItem(item.produto, quantidade, item.valorUnitario, item.desconto),
         };
       }
       return item;
@@ -168,7 +169,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       return {
         ...item,
         quantidade,
-        valorTotal: Math.round(quantidade * item.valorUnitario - item.desconto),
+        valorTotal: calcularTotalItem(item.produto, quantidade, item.valorUnitario, item.desconto),
       };
     });
     set({ itens: novaLista });

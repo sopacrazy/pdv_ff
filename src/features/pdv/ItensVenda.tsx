@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePdvStore } from '../../store/pdvStore';
 import { formatMoney } from '../../utils/formatters';
 import { temSegundaUnidade, paraSegundaUnidade } from '../../utils/unidades';
+import { precoSegundaUnidade } from '../../utils/precoSegundaUnidade';
 import { clsx } from 'clsx';
 import { ShoppingCart } from 'lucide-react';
 
@@ -129,12 +130,16 @@ export const ItensVenda = () => {
             <th className="p-4 w-28 text-right">Qtd 2ª</th>
             <th className="p-4 w-16 text-center">UN 2ª</th>
             <th className="p-4 w-32 text-right">Vl. Unit</th>
+            <th className="p-4 w-40 text-right">Preço 2ª UM</th>
             <th className="p-4 w-36 text-right pr-6">Total</th>
           </tr>
         </thead>
         <tbody className="font-mono text-2xl text-slate-800">
           {itens.map((item, index) => {
             const semPreco = !item.valorUnitario || item.valorUnitario <= 0;
+            const quantidade2 = paraSegundaUnidade(item.produto, item.quantidade)
+              ?? (item.produto.segundaUnidade === item.produto.unidade ? item.quantidade : null);
+            const preco2 = precoSegundaUnidade(item.valorTotal, quantidade2);
             return (
               <tr
                 key={item.id}
@@ -184,6 +189,9 @@ export const ItensVenda = () => {
                 </td>
                 <td data-label="Vl. Unit" className="p-4 text-right tabular-nums font-bold">
                   {semPreco ? 'SEM PREÇO' : formatMoney(item.valorUnitario)}
+                </td>
+                <td data-label="Preço 2ª UM" className="p-4 text-right tabular-nums text-base" title="Preço efetivo após arredondar o total do item">
+                  {preco2 ?? <span className="text-slate-300">—</span>}
                 </td>
                 <td data-label="Total" className="p-4 text-right tabular-nums font-bold pr-6">{formatMoney(item.valorTotal)}</td>
               </tr>

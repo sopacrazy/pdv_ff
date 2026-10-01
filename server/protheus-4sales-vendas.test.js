@@ -74,6 +74,14 @@ test('bloqueia venda sem condição de pagamento, descontos e preços não homol
  assert.throws(() => montar(venda,[{...precos[0],minimumSalesPrice:160}]), /165.00.*160.00/);
  assert.throws(() => montar({...venda,total:1}), /Total/);
 });
+test('item KG ajustado em um centavo mantém preço efetivo acima da tabela', () => {
+ const itemKg = { codigo_produto: '211.064', descricao: 'MELAO', unidade: 'KG', quantidade: 0.99, valor_unitario: 790, valor_total: 783, desconto: 0 };
+ const pedido = montarVenda4Sales({ ...venda, tipo_operacao: 'PDV', total: 783 }, [itemKg], vendedor, cliente,
+   [{ itemCode: '211.064', activeItemPrice: '1', minimumSalesPrice: 7.9 }]);
+ assert.equal(pedido.body.items[0].total, 7.83);
+ assert.ok(pedido.body.items[0].price >= 7.9);
+ assert.equal(pedido.body.value, 7.83);
+});
 test('somente retorno EFE da mesma venda e empresa confirma inclusão; não repete falhas', async () => {
  const original = globalThis.fetch; const user=process.env.PROTHEUS_REST_USER, pass=process.env.PROTHEUS_REST_PASSWORD;
  process.env.PROTHEUS_REST_USER='test'; process.env.PROTHEUS_REST_PASSWORD='test';

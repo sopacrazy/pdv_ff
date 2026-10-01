@@ -47,13 +47,17 @@ export function montarVenda4Sales(venda, itens, vendedor, cliente, precos) {
   if (venda.desconto || itens.some(i => i.desconto)) throw new Error('Descontos ainda precisam de homologação no 4Sales.');
   if (!itens.length || itens.length > 99) throw new Error('O bilhete deve conter de 1 a 99 itens.');
   const items = itens.map((i, index) => {
-    if (!Number.isFinite(i.quantidade) || i.quantidade <= 0 || !Number.isSafeInteger(i.valor_unitario) || i.valor_unitario <= 0 || Math.round(i.quantidade * i.valor_unitario) !== i.valor_total) throw new Error(`Valores inválidos: ${i.codigo_produto}.`);
+    const totalArredondado = Math.round(i.quantidade * i.valor_unitario);
+    const totalMinimoKg = i.unidade?.toUpperCase() === 'KG' ? Math.ceil(i.quantidade * i.valor_unitario - 1e-9) : totalArredondado;
+    if (!Number.isFinite(i.quantidade) || i.quantidade <= 0 || !Number.isSafeInteger(i.valor_unitario) || i.valor_unitario <= 0 ||
+      !Number.isSafeInteger(i.valor_total) || ![totalArredondado, totalMinimoKg].includes(i.valor_total)) throw new Error(`Valores inválidos: ${i.codigo_produto}.`);
     const encontrados = precos.filter(p => p.itemCode?.trim() === i.codigo_produto.trim() && p.activeItemPrice === '1');
     if (encontrados.length !== 1) throw new Error(`Produto ${i.codigo_produto}: confira o cadastro ativo na tabela ${tabelaCliente}.`);
     const preco = Number(encontrados[0].minimumSalesPrice);
     if (!Number.isFinite(preco) || Math.round(preco * 100) !== i.valor_unitario) throw new Error(`Produto ${i.codigo_produto}: PDV R$ ${(i.valor_unitario / 100).toFixed(2)}, tabela ${tabelaCliente} R$ ${preco.toFixed(2)}. Ajuste o cadastro antes de enviar.`);
+    const precoEfetivo = i.valor_total > totalArredondado ? Number((i.valor_total / i.quantidade / 100).toFixed(6)) : i.valor_unitario / 100;
     return { product: i.codigo_produto.trim(), name: i.descricao, description: i.descricao, index: index + 1,
-      quantity: i.quantidade, price: i.valor_unitario / 100, original: preco, priceFromTable: preco,
+      quantity: i.quantidade, price: precoEfetivo, original: preco, priceFromTable: preco,
       total: i.valor_total / 100, discount: 0, discountPercent: 0, originalDiscount: 0,
       firstUnitQuantity: 0, secondUnitQuantity: 0, secondUnitValue: 0,
       stock: [{ id: tenant, name: 'LOJA', wharehouse: '01', batch: '', validity: '00/00/00', value: 0 }],

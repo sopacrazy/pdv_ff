@@ -1,5 +1,9 @@
 # Atualizações do PDV Fort Fruit
 
+## Preço da segunda unidade com seis casas — versão 0.1.23
+
+O PDV e Consultas mostram a coluna **Preço 2ª UM** com seis casas decimais. O valor é calculado dividindo o total do item pela quantidade da segunda unidade. Novas vendas KG arredondam o valor da linha para cima quando necessário para manter o preço efetivo no mínimo da tabela, com o centavo exibido antes de cobrar. Em vendas rejeitadas, o ajuste de um centavo por item exige confirmação de que o novo total foi cobrado; o reenvio é manual e o histórico preserva a alteração.
+
 ## Edição de quantidade em venda rejeitada — versão 0.1.22
 
 Em **Consultas**, expanda uma venda PDV rejeitada e use o lápis ao lado da quantidade para corrigir um item. O sistema mostra o novo total para confirmação, salva o histórico com o usuário e só tenta enviar após clicar em reenviar. Corrija apenas a quantidade realmente vendida e confira o valor cobrado. Quando o retorno é preço abaixo da tabela, uma quantidade correta pode exigir ajuste de cadastro no Protheus.

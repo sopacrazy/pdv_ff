@@ -1,4 +1,15 @@
-# PDV Fort Fruit 0.1.22
+# PDV Fort Fruit 0.1.23
+
+- Mostra **Preço 2ª UM** com seis casas decimais nos itens da venda em andamento e em **Consultas**, calculado a partir do total arredondado da linha e da quantidade na segunda unidade.
+- Permite conferir valores como R$ 16,82 ÷ 1,21 = 13,900826, como no bilhete do Protheus.
+- Novas vendas de produtos KG arredondam o total do item para cima quando o arredondamento comum ficaria abaixo do preço mínimo por peso; o valor aparece antes do pagamento.
+- Em uma venda PDV rejeitada, o botão **Ajustar +1 centavo** permite corrigir esse caso depois de confirmar que o novo total foi cobrado. O histórico registra usuário, item e totais. O reenvio continua manual.
+
+Finalize ou cancele o cupom aberto antes de instalar. Se houver rejeição por preço abaixo da tabela para um peso correto, confira o total cobrado antes de ajustar e reenviar. Preços da tabela alterados ou diferenças maiores continuam exigindo conferência do cadastro.
+
+Validação: testes do cálculo e do payload com os itens do exemplo, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
+
+## Alterações mantidas da versão 0.1.22
 
 - Em **Consultas**, permite corrigir a quantidade de itens de uma venda PDV rejeitada pelo Protheus.
 - Recalcula o item e o total, mostra o histórico da alteração com usuário e mantém a venda rejeitada até o reenvio manual.

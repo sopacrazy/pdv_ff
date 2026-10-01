@@ -51,6 +51,7 @@ export interface VendaResumo {
 export interface VendaDetalhe extends VendaResumo {
   dataLocal?: string;
   edicoesQuantidade?: { codigo: string; quantidadeAnterior: number; quantidadeNova: number; totalAnterior: number; totalNovo: number; editadoEm: string; usuario: string }[];
+  ajustesPreco?: { codigo: string; totalItemAnterior: number; totalItemNovo: number; totalAnterior: number; totalNovo: number; ajustadoEm: string; usuario: string }[];
   impressao?: {
     clienteFantasia?: string; clienteEndereco?: string; clienteCidade?: string;
     clienteRg?: string; clienteTelefone?: string; clienteFax?: string;
@@ -137,6 +138,20 @@ export const vendaService = {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ quantidade }),
+      });
+      const corpo = await resp.json().catch(() => ({}));
+      return resp.ok ? { sucesso: true } : { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };
+    } catch (erro) {
+      return { sucesso: false, erro: erro instanceof Error ? erro.message : 'Falha ao conectar com o servidor local' };
+    }
+  },
+
+  ajustarPrecoMinimo: async (id: string, itemId: string, totalItemEsperado: number, token: string): Promise<{ sucesso: boolean; erro?: string }> => {
+    try {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/itens/${encodeURIComponent(itemId)}/ajustar-preco-minimo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ confirmado: true, totalItemEsperado }),
       });
       const corpo = await resp.json().catch(() => ({}));
       return resp.ok ? { sucesso: true } : { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };

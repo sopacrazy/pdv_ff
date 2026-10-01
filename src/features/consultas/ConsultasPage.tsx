@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
+import { precoSegundaUnidade } from '../../utils/precoSegundaUnidade';
 import { vendaService, VendaResumo, VendaDetalhe, StatusProtheus } from '../../services/vendaService';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
@@ -107,6 +108,7 @@ export function ConsultasPage() {
   const [itemEmEdicao, setItemEmEdicao] = useState<string | null>(null);
   const [quantidadeEditada, setQuantidadeEditada] = useState('');
   const [salvandoQuantidade, setSalvandoQuantidade] = useState(false);
+  const [salvandoPreco, setSalvandoPreco] = useState(false);
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'TODOS' | StatusProtheus>('TODOS');
@@ -267,7 +269,10 @@ export function ConsultasPage() {
     }
     const item = detalhe.itens.find((i) => i.id === itemId);
     if (!item) return;
-    const novoTotal = detalhe.total - item.valorTotal + Math.round(quantidade * item.valorUnitario);
+    const novoItem = item.unidade?.toUpperCase() === 'KG'
+      ? Math.ceil(quantidade * item.valorUnitario - 1e-9)
+      : Math.round(quantidade * item.valorUnitario);
+    const novoTotal = detalhe.total - item.valorTotal + novoItem;
     if (!window.confirm(`Confirme a quantidade realmente vendida de ${item.descricao}: ${item.quantidade} → ${quantidade}. O total passará de ${formatMoney(detalhe.total)} para ${formatMoney(novoTotal)}. Confira o valor cobrado do cliente antes de salvar. A venda não será reenviada automaticamente.`)) return;
     setSalvandoQuantidade(true);
     const resultado = await vendaService.editarQuantidadeRejeitada(detalhe.id, itemId, quantidade, token);
@@ -277,6 +282,22 @@ export function ConsultasPage() {
     setDetalhe(await vendaService.buscarVenda(detalhe.id));
     await carregar();
     mostrarToast('Quantidade salva. Confira o total e clique em reenviar quando estiver correto.', 'sucesso');
+  };
+
+  const ajustarPrecoMinimo = async (itemId: string) => {
+    if (!token || !detalhe || salvandoPreco) return;
+    const item = detalhe.itens.find((i) => i.id === itemId);
+    if (!item) return;
+    const totalMinimo = Math.ceil(item.quantidade * item.valorUnitario - 1e-9);
+    const novoTotal = detalhe.total - item.valorTotal + totalMinimo;
+    if (!window.confirm(`Confirme que o cliente pagou ${formatMoney(novoTotal)} pelo cupom ${detalhe.numeroCupom}. O item ${item.descricao} passará de ${formatMoney(item.valorTotal)} para ${formatMoney(totalMinimo)} para respeitar o preço mínimo por KG. O reenvio será manual.`)) return;
+    setSalvandoPreco(true);
+    const resultado = await vendaService.ajustarPrecoMinimo(detalhe.id, itemId, totalMinimo, token);
+    setSalvandoPreco(false);
+    if (!resultado.sucesso) return mostrarToast(resultado.erro || 'Não foi possível ajustar o preço.', 'erro');
+    setDetalhe(await vendaService.buscarVenda(detalhe.id));
+    await carregar();
+    mostrarToast('Preço ajustado. Confira o cupom e clique em reenviar.', 'sucesso');
   };
 
   // Os cards refletem todo o período selecionado; busca e status filtram apenas a lista.
@@ -530,7 +551,9 @@ export function ConsultasPage() {
                                           <th className="text-left py-2.5 px-4">Descrição</th>
                                           <th className="text-right py-2.5 px-4">Qtd</th>
                                           <th className="text-right py-2.5 px-4">Vl. Unit</th>
+                                          <th className="text-right py-2.5 px-4">Preço 2ª UM</th>
                                           <th className="text-right py-2.5 px-4">Total</th>
+                                          <th className="text-right py-2.5 px-4">Ação</th>
                                         </tr>
                                       </thead>
                                       <tbody className="font-mono text-slate-700">
@@ -554,7 +577,16 @@ export function ConsultasPage() {
                                               )}
                                             </td>
                                             <td className="py-2.5 px-4 text-right">{formatMoney(item.valorUnitario)}</td>
+                                            <td className="py-2.5 px-4 text-right" title="Preço efetivo após arredondar o total do item">
+                                              {precoSegundaUnidade(item.valorTotal, item.quantidade2 ?? (item.unidade2 === item.unidade ? item.quantidade : null)) ?? '—'}
+                                            </td>
                                             <td className="py-2.5 px-4 text-right font-bold">{formatMoney(item.valorTotal)}</td>
+                                            <td className="py-2.5 px-2 text-right font-sans">
+                                              {detalhe.statusProtheus === 'REJEITADO' && detalhe.tipoOperacao === 'PDV' &&
+                                                item.unidade?.toUpperCase() === 'KG' && Math.ceil(item.quantidade * item.valorUnitario - 1e-9) === item.valorTotal + 1 && (
+                                                  <button type="button" disabled={salvandoPreco} onClick={() => void ajustarPrecoMinimo(item.id)} className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 disabled:opacity-50">Ajustar +1 centavo</button>
+                                                )}
+                                            </td>
                                           </tr>
                                         ))}
                                       </tbody>
@@ -596,6 +628,14 @@ export function ConsultasPage() {
                                       <div className="mb-1 font-bold text-slate-700">Histórico de quantidades</div>
                                       {detalhe.edicoesQuantidade.map((edicao, indice) => (
                                         <div key={indice}>{edicao.codigo}: {edicao.quantidadeAnterior} → {edicao.quantidadeNova} · {formatMoney(edicao.totalAnterior)} → {formatMoney(edicao.totalNovo)} · {edicao.usuario} · {new Date(edicao.editadoEm).toLocaleString('pt-BR')}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {detalhe.ajustesPreco && detalhe.ajustesPreco.length > 0 && (
+                                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                      <div className="mb-1 font-bold">Histórico de ajuste do preço mínimo</div>
+                                      {detalhe.ajustesPreco.map((ajuste, indice) => (
+                                        <div key={indice}>{ajuste.codigo}: {formatMoney(ajuste.totalItemAnterior)} → {formatMoney(ajuste.totalItemNovo)} · cupom {formatMoney(ajuste.totalAnterior)} → {formatMoney(ajuste.totalNovo)} · {ajuste.usuario} · {new Date(ajuste.ajustadoEm).toLocaleString('pt-BR')}</div>
                                       ))}
                                     </div>
                                   )}

@@ -7,6 +7,7 @@ import path from 'node:path';
 process.env.PDV_DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'pdv-conta-central-'));
 process.env.API_PORT = '0';
 const { getDb } = await import('./db.js');
+const { getProtheusCacheDb } = await import('./protheus-cache-db.js');
 const { iniciarApi } = await import('./api.js');
 const db = getDb();
 const servidor = await iniciarApi();
@@ -58,6 +59,16 @@ test('API salva venda PDV pelo total de cada item arredondado, mesmo com fronten
   assert.deepEqual(db.prepare('SELECT subtotal, total FROM vendas WHERE id=?').get(resposta.corpo.id), { subtotal: 2387, total: 2387 });
 });
 
+test('API aceita total KG arredondado para cima antes do pagamento', async () => {
+  const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
+    subtotal: 783, desconto: 0, total: 783, formaPagamento: '001',
+    itens: [{ produto: { codigo: '211.064', descricao: 'MELAO CEPI', unidade: 'KG' }, quantidade: 0.99,
+      valorUnitario: 790, valorTotal: 783, desconto: 0 }] };
+  const resposta = await json('/api/vendas', 'token1', venda);
+  assert.equal(resposta.status, 200, JSON.stringify(resposta.corpo));
+  assert.equal(db.prepare('SELECT total FROM vendas WHERE id=?').get(resposta.corpo.id).total, 783);
+});
+
 test('edita quantidade apenas em venda PDV rejeitada, recalcula e registra auditoria sem reenviar', async () => {
   const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
     subtotal: 782, desconto: 0, total: 782, formaPagamento: '001',
@@ -86,6 +97,34 @@ test('edita quantidade apenas em venda PDV rejeitada, recalcula e registra audit
   assert.deepEqual(db.prepare('SELECT usuario_id,quantidade_anterior,quantidade_nova,total_venda_anterior,total_venda_novo FROM venda_edicoes_quantidade WHERE venda_id=?').get(id),
     { usuario_id: 'u2', quantidade_anterior: 0.99, quantidade_nova: 1, total_venda_anterior: 782, total_venda_novo: 790 });
   assert.equal((await editar(1.0001)).status, 400);
+});
+
+test('ajusta um centavo de item KG rejeitado somente com confirmação e tabela conferida', async () => {
+  const cache = getProtheusCacheDb();
+  const agora = new Date().toISOString();
+  cache.prepare(`INSERT OR REPLACE INTO precos (tabela,produto,preco,preco_segunda_unidade,ativo,atualizado_em)
+    VALUES ('015','211.064',7.9,7.9,1,?)`).run(agora);
+  cache.prepare(`INSERT OR REPLACE INTO cache_metadata (chave,valor,atualizado_em)
+    VALUES ('precos_015',?,?)`).run(agora, agora);
+  const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
+    subtotal: 782, desconto: 0, total: 782, formaPagamento: '001',
+    itens: [{ produto: { codigo: '211.064', descricao: 'MELAO CEPI', unidade: 'KG' }, quantidade: 0.99,
+      valorUnitario: 790, valorTotal: 782, desconto: 0 }] };
+  const criada = await json('/api/vendas', 'token1', venda);
+  assert.equal(criada.status, 200);
+  const id = criada.corpo.id;
+  const itemId = db.prepare('SELECT id FROM venda_itens WHERE venda_id=?').get(id).id;
+  db.prepare("UPDATE vendas SET status_protheus='REJEITADO',payload_protheus='{}' WHERE id=?").run(id);
+  const rota = `/api/vendas/${id}/itens/${itemId}/ajustar-preco-minimo`;
+  assert.equal((await json(rota, 'token1', { confirmado: true, totalItemEsperado: 784 })).status, 409);
+  const ajustada = await json(rota, 'token2', { confirmado: true, totalItemEsperado: 783 });
+  assert.equal(ajustada.status, 200, JSON.stringify(ajustada.corpo));
+  assert.equal(ajustada.corpo.total, 783);
+  assert.equal(db.prepare('SELECT valor_total FROM venda_itens WHERE id=?').get(itemId).valor_total, 783);
+  const depois = db.prepare('SELECT total,status_protheus,payload_protheus FROM vendas WHERE id=?').get(id);
+  assert.deepEqual(depois, { total: 783, status_protheus: 'REJEITADO', payload_protheus: null });
+  assert.deepEqual(db.prepare('SELECT usuario_id,total_item_anterior,total_item_novo FROM venda_ajustes_preco WHERE venda_id=?').get(id),
+    { usuario_id: 'u2', total_item_anterior: 782, total_item_novo: 783 });
 });
 
 test('localizar vendedor usa o cadastro sincronizado e não autentica o operador no REST', async () => {
