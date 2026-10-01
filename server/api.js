@@ -90,6 +90,7 @@ function paraVendaResumo(linha) {
     valorRecebido: linha.valor_recebido,
     troco: linha.troco,
     tipoOperacao: linha.tipo_operacao || 'PDV',
+    dataLocal: linha.data_local,
     clienteCodigo: linha.cliente_codigo || null,
     clienteLoja: linha.cliente_loja || null,
     tabelaPreco: linha.tabela_preco || null,
@@ -1021,6 +1022,18 @@ export function iniciarApi() {
 
   app.get('/api/vendas', (req, res) => {
     const db = getDb();
+    const { inicio, fim } = req.query;
+    if (inicio !== undefined || fim !== undefined) {
+      const dataValida = (valor) => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor)
+        && !Number.isNaN(Date.parse(`${valor}T00:00:00Z`))
+        && new Date(`${valor}T00:00:00Z`).toISOString().slice(0, 10) === valor;
+      if (!dataValida(inicio) || !dataValida(fim) || inicio > fim) {
+        return res.status(400).json({ erro: 'Informe um período válido com data inicial anterior ou igual à final.' });
+      }
+      const linhas = db.prepare("SELECT * FROM vendas WHERE data_local BETWEEN ? AND ? AND deletado = '' ORDER BY data_local DESC, criado_em DESC")
+        .all(inicio, fim);
+      return res.json(linhas.map(paraVendaResumo));
+    }
     // Sem data explícita na query, mostra o dia "de operação" atual — se a loja adiantou a data
     // (funcionamento de madrugada), é nele que as vendas recentes estão, não necessariamente na
     // data real do calendário.

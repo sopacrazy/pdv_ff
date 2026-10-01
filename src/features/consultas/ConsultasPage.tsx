@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import {
   RefreshCw,
@@ -47,6 +47,11 @@ const IconeForma = ({ forma, size = 16 }: { forma: string; size?: number }) => {
 // não duplica bilhete), então aqui é só sobre não mostrar "Enviando..." além da conta — mesmo valor
 // do RETRY_STATUS_INCERTO_MS do servidor (server/fila-protheus.js).
 const CONFERIR_EM_ANDAMENTO_MS = 200000;
+
+const dataLocalHoje = () => {
+  const agora = new Date();
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')}`;
+};
 
 const ROTULO_STATUS: Record<'TODOS' | StatusProtheus, string> = {
   TODOS: 'Todos',
@@ -101,6 +106,11 @@ export function ConsultasPage() {
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'TODOS' | StatusProtheus>('TODOS');
+  const [modoData, setModoData] = useState<'DIA' | 'PERIODO'>('DIA');
+  const [dataInicial, setDataInicial] = useState(dataLocalHoje);
+  const [dataFinal, setDataFinal] = useState(dataLocalHoje);
+  const requisicaoAtual = useRef(0);
+  const periodoInvalido = modoData === 'PERIODO' && (!dataInicial || !dataFinal || dataInicial > dataFinal);
   const { imprimirPorId } = useImpressaoCupom();
   // Só a ação — o estado e o efeito de impressão ficam no App.tsx (ver
   // src/hooks/useImpressaoBilheteProtheus.ts).
@@ -124,12 +134,25 @@ export function ConsultasPage() {
     }
   };
 
-  const carregar = async () => {
-    setCarregando(true);
-    const lista = await vendaService.listarVendasDoDia();
-    setVendas(lista);
-    setCarregando(false);
-  };
+  const carregar = useCallback(async (silencioso = false) => {
+    const requisicao = ++requisicaoAtual.current;
+    if (periodoInvalido) {
+      setVendas([]);
+      setCarregando(false);
+      return;
+    }
+    if (!silencioso) setCarregando(true);
+    try {
+      const lista = modoData === 'DIA'
+        ? await vendaService.listarVendasDoDia()
+        : await vendaService.listarVendasPeriodo(dataInicial, dataFinal);
+      if (requisicao === requisicaoAtual.current) setVendas(lista);
+    } catch {
+      if (requisicao === requisicaoAtual.current && !silencioso) mostrarToast('Não foi possível carregar as vendas.', 'erro');
+    } finally {
+      if (requisicao === requisicaoAtual.current) setCarregando(false);
+    }
+  }, [modoData, dataInicial, dataFinal, periodoInvalido, mostrarToast]);
 
   const conferirProtheus = async () => {
     if (!token || conferindo) return;
@@ -145,8 +168,8 @@ export function ConsultasPage() {
   };
 
   useEffect(() => {
-    carregar();
-  }, []);
+    void carregar();
+  }, [carregar]);
 
   // O envio ao Protheus agora roda em segundo plano (o PDV dispara sozinho ao finalizar, e o
   // servidor tem uma fila que retenta as vendas paradas) — sem esse polling, o status na tela só
@@ -154,8 +177,7 @@ export function ConsultasPage() {
   useEffect(() => {
     const timer = setInterval(async () => {
       try {
-        const lista = await vendaService.listarVendasDoDia();
-        setVendas(lista);
+        await carregar(true);
         if (expandidoId) {
           const venda = await vendaService.buscarVenda(expandidoId);
           if (venda) setDetalhe(venda);
@@ -165,7 +187,7 @@ export function ConsultasPage() {
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [expandidoId]);
+  }, [expandidoId, carregar]);
 
   const alternarExpandido = async (id: string) => {
     if (expandidoId === id) {
@@ -231,9 +253,7 @@ export function ConsultasPage() {
     await carregar();
   };
 
-  // Os cards de resumo (total do dia, ticket médio, formas de pagamento) sempre refletem o dia
-  // inteiro, sem filtro — só a lista abaixo é filtrada, pra achar um cupom/bilhete específico sem
-  // perder a visão geral do dia.
+  // Os cards refletem todo o período selecionado; busca e status filtram apenas a lista.
   const termoBusca = busca.trim().toLowerCase();
   const vendasFiltradas = vendas.filter((v) => {
     if (filtroStatus !== 'TODOS' && v.statusProtheus !== filtroStatus) return false;
@@ -245,8 +265,8 @@ export function ConsultasPage() {
   });
 
   const vendasAtivas = vendas.filter(v => v.statusProtheus !== 'EXCLUIDO_PROTHEUS');
-  const totalDoDia = vendasAtivas.reduce((acc, v) => acc + v.total, 0);
-  const ticketMedio = vendasAtivas.length > 0 ? Math.round(totalDoDia / vendasAtivas.length) : 0;
+  const totalPeriodo = vendasAtivas.reduce((acc, v) => acc + v.total, 0);
+  const ticketMedio = vendasAtivas.length > 0 ? Math.round(totalPeriodo / vendasAtivas.length) : 0;
 
   const formatadorHora = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short' });
   const formatadorData = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'full' });
@@ -256,11 +276,12 @@ export function ConsultasPage() {
       <Toast />
       <header className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Consultas &middot; Vendas do Dia</h1>
-          <p className="text-sm text-slate-400 capitalize">{formatadorData.format(new Date())}</p>
+          <h1 className="text-xl font-bold text-slate-800">Consultas &middot; Vendas {modoData === 'DIA' ? 'do Dia' : 'por Período'}</h1>
+          <p className="text-sm text-slate-400 capitalize">{modoData === 'DIA' ? formatadorData.format(new Date()) : `${dataInicial || '—'} até ${dataFinal || '—'}`}</p>
         </div>
         <button
-          onClick={carregar}
+          onClick={() => void carregar()}
+          disabled={periodoInvalido}
           className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg transition-colors font-medium text-sm"
         >
           <RefreshCw size={16} className={carregando ? 'animate-spin' : ''} />
@@ -269,13 +290,30 @@ export function ConsultasPage() {
       </header>
 
       <div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 my-5 flex flex-wrap items-end gap-3">
+          <div className="flex gap-2" aria-label="Período da consulta">
+            <button type="button" onClick={() => setModoData('DIA')} className={clsx('px-4 py-2 rounded-xl text-sm font-bold border', modoData === 'DIA' ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 text-slate-600')}>Dia de operação</button>
+            <button type="button" onClick={() => setModoData('PERIODO')} className={clsx('px-4 py-2 rounded-xl text-sm font-bold border', modoData === 'PERIODO' ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-200 text-slate-600')}>Período</button>
+          </div>
+          {modoData === 'PERIODO' && (
+            <>
+              <label className="text-sm font-medium text-slate-600">Data inicial
+                <input type="date" value={dataInicial} onChange={(e) => setDataInicial(e.target.value)} className="block mt-1 px-3 py-2 border border-slate-200 rounded-xl text-slate-800" />
+              </label>
+              <label className="text-sm font-medium text-slate-600">Data final
+                <input type="date" value={dataFinal} onChange={(e) => setDataFinal(e.target.value)} className="block mt-1 px-3 py-2 border border-slate-200 rounded-xl text-slate-800" />
+              </label>
+              {periodoInvalido && <span role="alert" className="text-sm text-red-600">Informe datas válidas, com a inicial até a final.</span>}
+            </>
+          )}
+        </div>
         <div className="grid grid-cols-3 gap-6 mb-6">
           <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center gap-4">
             <div className="p-3 rounded-xl bg-blue-50 text-blue-600">
               <ShoppingBag size={24} />
             </div>
             <div>
-              <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Vendas no dia</div>
+              <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Vendas {modoData === 'DIA' ? 'no dia' : 'no período'}</div>
               <div className="text-2xl font-black text-slate-800 tabular-nums">{vendasAtivas.length}</div>
             </div>
           </div>
@@ -285,7 +323,7 @@ export function ConsultasPage() {
             </div>
             <div>
               <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total vendido</div>
-              <div className="text-2xl font-black text-green-600 tabular-nums">{formatMoney(totalDoDia)}</div>
+              <div className="text-2xl font-black text-green-600 tabular-nums">{formatMoney(totalPeriodo)}</div>
             </div>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 p-6 flex items-center gap-4">
@@ -346,13 +384,13 @@ export function ConsultasPage() {
           ) : vendasFiltradas.length === 0 ? (
             <div className="p-16 flex flex-col items-center gap-3 text-slate-400">
               <Receipt size={40} className="opacity-40" />
-              {vendas.length === 0 ? 'Nenhuma venda registrada hoje.' : 'Nenhuma venda encontrada com esse filtro.'}
+              {periodoInvalido ? 'Selecione um período válido.' : vendas.length === 0 ? (modoData === 'DIA' ? 'Nenhuma venda registrada hoje.' : 'Nenhuma venda registrada nesse período.') : 'Nenhuma venda encontrada com esse filtro.'}
             </div>
           ) : (
             <table className="w-full text-left border-collapse">
               <thead className="bg-slate-100 text-slate-600 text-xs uppercase font-bold border-b border-slate-200">
                 <tr>
-                  <th className="p-4 w-20">Hora</th>
+                  <th className="p-4 w-20">{modoData === 'DIA' ? 'Hora' : 'Data / hora'}</th>
                   <th className="p-4">Cupom</th>
                   <th className="p-4">Cliente</th>
                   <th className="p-4">Pagamento</th>
@@ -375,6 +413,7 @@ export function ConsultasPage() {
                         )}
                       >
                         <td className="p-4 font-mono text-sm text-slate-400">
+                          {modoData === 'PERIODO' && <span className="block whitespace-nowrap text-slate-600">{(venda.dataLocal || venda.criadoEm.slice(0, 10)).split('-').reverse().join('/')}</span>}
                           {formatadorHora.format(new Date(venda.criadoEm))}
                         </td>
                         <td className="p-4 font-bold text-slate-800 whitespace-nowrap">

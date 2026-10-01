@@ -30,6 +30,7 @@ export interface VendaResumo {
   total: number;
   formaPagamento: string;
   criadoEm: string;
+  dataLocal?: string;
   editadoEm: string | null;
   statusProtheus: StatusProtheus;
   protheusAtualizadoEm?: string | null;
@@ -110,6 +111,13 @@ export const vendaService = {
     const query = data ? `?data=${encodeURIComponent(data)}` : '';
     const resp = await fetch(`/api/vendas${query}`);
     if (!resp.ok) return [];
+    return resp.json();
+  },
+
+  listarVendasPeriodo: async (inicio: string, fim: string): Promise<VendaResumo[]> => {
+    const params = new URLSearchParams({ inicio, fim });
+    const resp = await fetch(`/api/vendas?${params}`);
+    if (!resp.ok) throw new Error('Não foi possível consultar as vendas do período.');
     return resp.json();
   },
 

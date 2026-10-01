@@ -1,5 +1,9 @@
 # Atualizações do PDV Fort Fruit
 
+## Consulta de vendas por período — versão 0.1.18
+
+Em **Consultas**, selecione **Período** e informe as datas inicial e final. A lista inclui as vendas dos dois dias escolhidos e mostra a data de operação de cada registro. Os indicadores de quantidade, total vendido e ticket médio acompanham o período. **Dia de operação** continua sendo a opção padrão. O intervalo é validado antes da consulta.
+
 ## Conferência das exclusões no Protheus
 
 O servidor confere a SZ4140 na inicialização e a cada cinco minutos, incluindo registros com `D_E_L_E_T_='*'`. A correspondência exige filial, número do bilhete e ID da integração. A conferência percorre até mil registros locais por ciclo, priorizando os menos recentemente conferidos. Em Consultas, **Conferir exclusões** permite antecipar a verificação.

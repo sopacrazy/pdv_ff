@@ -1,4 +1,15 @@
-# PDV Fort Fruit 0.1.17
+# PDV Fort Fruit 0.1.18
+
+- Em **Consultas**, permite escolher **Período** e informar data inicial e final para buscar vendas de vários dias.
+- Mostra a data de cada venda no resultado e atualiza os totais conforme o período escolhido.
+- Mantém **Dia de operação** como consulta padrão, com atualização automática dos resultados.
+- Valida o intervalo de datas e mantém as correções das versões anteriores.
+
+Finalize ou cancele o cupom aberto antes de instalar. Use **Ajuda → Verificar atualizações agora** nas máquinas configuradas. O instalador preserva configurações, usuários e vendas.
+
+Validação: 87 testes locais, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda enviada ao Protheus durante a preparação desta versão.
+
+## Alterações mantidas da versão 0.1.17
 
 - Confere exclusões no Protheus ao iniciar e a cada cinco minutos, incluindo os registros com `D_E_L_E_T_='*'`.
 - Permite conferir imediatamente pelo botão **Conferir exclusões**, em Consultas.
