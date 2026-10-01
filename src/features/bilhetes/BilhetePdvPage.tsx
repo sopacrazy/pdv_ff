@@ -10,6 +10,7 @@ import { vendaService } from '../../services/vendaService';
 import { Produto } from '../../types/produto';
 import { ItemVenda } from '../../types/venda';
 import { formatMoney, formatMoneySegundaUnidade } from '../../utils/formatters';
+import { calcularTotalEmCentavos, reaisParaCentavos } from '../../utils/totalItem';
 import { rotuloFilial } from '../../utils/filiais';
 import { paraPrimeiraUnidade, paraSegundaUnidade, temSegundaUnidade } from '../../utils/unidades';
 import { Toast } from '../../components/Toast';
@@ -183,10 +184,10 @@ export function BilhetePdvPage() {
       if (existente) {
         setItemSelecionadoId(existente.id);
         return atuais.map((item) => item.id === existente.id
-          ? { ...item, quantidade: item.quantidade + 1, valorTotal: Math.round((item.quantidade + 1) * item.valorUnitario) }
+          ? { ...item, quantidade: item.quantidade + 1, valorTotal: calcularTotalEmCentavos(item.quantidade + 1, item.valorUnitario) }
           : item);
       }
-      const valorUnitario = Math.round(produto.preco * 100);
+      const valorUnitario = reaisParaCentavos(produto.preco);
       const novo = { id: gerarId(), produto, quantidade: 1, valorUnitario, desconto: 0, valorTotal: valorUnitario };
       setItemSelecionadoId(novo.id);
       return [...atuais, novo];
@@ -270,7 +271,7 @@ export function BilhetePdvPage() {
       const item = atuais.find((i) => i.id === id);
       if (item && avisarSemEstoque(item.produto, numero)) return atuais;
       return atuais.map((item) => item.id === id
-        ? { ...item, quantidade: numero, valorTotal: Math.round(numero * item.valorUnitario) }
+        ? { ...item, quantidade: numero, valorTotal: calcularTotalEmCentavos(numero, item.valorUnitario) }
         : item);
     });
   };
@@ -285,7 +286,7 @@ export function BilhetePdvPage() {
       return atuais.map((item) => {
         if (item.id !== id) return item;
         const quantidadePrimeira = paraPrimeiraUnidade(item.produto, quantidadeSegunda);
-        return quantidadePrimeira == null ? item : { ...item, quantidade: quantidadePrimeira, valorTotal: Math.round(quantidadePrimeira * item.valorUnitario) };
+        return quantidadePrimeira == null ? item : { ...item, quantidade: quantidadePrimeira, valorTotal: calcularTotalEmCentavos(quantidadePrimeira, item.valorUnitario) };
       });
     });
   };
@@ -570,7 +571,7 @@ export function BilhetePdvPage() {
                       <span className={clsx('text-sm font-bold tabular-nums', produtoSelecionado === indice ? 'text-blue-100' : produto.saldoEstoque != null && produto.saldoEstoque <= 0 ? 'text-red-600' : 'text-emerald-700')}>
                         {produto.saldoEstoque != null && produto.saldoEstoque <= 0 ? 'Sem estoque · ' : 'Estoque: '}{produto.saldoEstoque == null ? '—' : `${formatarQuantidade(produto.saldoEstoque)} ${produto.unidade}`}
                       </span>
-                      <strong className="min-w-28 text-xl tabular-nums">{formatMoney(Math.round(produto.preco * 100))}</strong>
+                      <strong className="min-w-28 text-xl tabular-nums">{formatMoney(reaisParaCentavos(produto.preco))}</strong>
                     </span>
                   </button>
                 ))}

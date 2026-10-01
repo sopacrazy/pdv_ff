@@ -95,3 +95,11 @@ test('aceita preço acima do mínimo e rejeita preço abaixo da tabela', () => {
   assert.ok(!validarBilheteLocal(venda(6100)).erros.some((erro) => erro.includes('abaixo do mínimo')));
   assert.ok(validarBilheteLocal(venda(5900)).erros.some((erro) => erro.includes('abaixo do mínimo')));
 });
+
+test('confere o total do Bilhete com empate decimal half up', () => {
+  prepararCliente({ condicao: '001', saldo: 0 });
+  getProtheusCacheDb().prepare("UPDATE precos SET preco=1 WHERE produto='253.013'").run();
+  const bilhete = { ...venda(101), itens: [{ produto: { codigo: '253.013' }, quantidade: 1.005, valorUnitario: 100, desconto: 0 }] };
+  assert.ok(!validarBilheteLocal(bilhete).erros.some((erro) => erro.includes('total do Bilhete diverge')));
+  assert.ok(validarBilheteLocal({ ...bilhete, total: 100 }).erros.some((erro) => erro.includes('total do Bilhete diverge')));
+});

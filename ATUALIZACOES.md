@@ -1,8 +1,12 @@
 # Atualizações do PDV Fort Fruit
 
+## Arredondamento do Protheus — versão 0.1.24
+
+O total de cada item é arredondado para centavos com a regra decimal do Protheus; depois, **Preço 2ª UM** é calculado como total arredondado dividido pela quantidade da segunda unidade, com seis casas. Para 6,06 × R$ 16,90: **R$ 102,41** e **16,899340**. O ajuste manual de um centavo da versão anterior foi removido porque podia criar um total divergente. Em **Consultas**, vendas PDV rejeitadas pelo arredondamento antigo podem ser recalculadas após confirmar, em cada venda, que o valor correto foi cobrado ou que a diferença foi devolvida. O histórico guarda o valor anterior e o reenvio é manual. Rejeições por preço mínimo da tabela ainda exigem conferência do cadastro e do pagamento antes do reenvio.
+
 ## Preço da segunda unidade com seis casas — versão 0.1.23
 
-O PDV e Consultas mostram a coluna **Preço 2ª UM** com seis casas decimais. O valor é calculado dividindo o total do item pela quantidade da segunda unidade. Novas vendas KG arredondam o valor da linha para cima quando necessário para manter o preço efetivo no mínimo da tabela, com o centavo exibido antes de cobrar. Em vendas rejeitadas, o ajuste de um centavo por item exige confirmação de que o novo total foi cobrado; o reenvio é manual e o histórico preserva a alteração.
+O PDV e Consultas passaram a mostrar **Preço 2ª UM** com seis casas decimais. Esta versão incluía um arredondamento para cima de itens KG e um ajuste manual de um centavo em vendas rejeitadas; ambos foram substituídos pela regra do Protheus na 0.1.24. O histórico das alterações feitas anteriormente continua preservado.
 
 ## Edição de quantidade em venda rejeitada — versão 0.1.22
 

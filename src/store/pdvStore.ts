@@ -7,7 +7,7 @@ import { vendaService } from '../services/vendaService';
 import { caixaService } from '../services/caixaService';
 import { paraPrimeiraUnidade } from '../utils/unidades';
 import { calcularTotaisVenda } from '../utils/totaisVenda';
-import { calcularTotalItem } from '../utils/totalItem';
+import { calcularTotalItem, reaisParaCentavos } from '../utils/totalItem';
 
 export type ModalType = 'NENHUM' | 'BUSCA_PRODUTO' | 'CANCELAR_ITEM' | 'CANCELAR_CUPOM' | 'PAGAMENTO';
 
@@ -123,7 +123,7 @@ export const usePdvStore = create<PdvState>((set, get) => ({
       };
       set({ itens: novaLista, itemSelecionadoId: item.id });
     } else {
-      const valorUnitarioCents = Math.round(produto.preco * 100);
+      const valorUnitarioCents = reaisParaCentavos(produto.preco);
       const novoItem: ItemVenda = {
         id: gerarId(),
         produto,

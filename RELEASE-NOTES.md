@@ -1,13 +1,14 @@
-# PDV Fort Fruit 0.1.23
+# PDV Fort Fruit 0.1.24
 
-- Mostra **Preço 2ª UM** com seis casas decimais nos itens da venda em andamento e em **Consultas**, calculado a partir do total arredondado da linha e da quantidade na segunda unidade.
-- Permite conferir valores como R$ 16,82 ÷ 1,21 = 13,900826, como no bilhete do Protheus.
-- Novas vendas de produtos KG arredondam o total do item para cima quando o arredondamento comum ficaria abaixo do preço mínimo por peso; o valor aparece antes do pagamento.
-- Em uma venda PDV rejeitada, o botão **Ajustar +1 centavo** permite corrigir esse caso depois de confirmar que o novo total foi cobrado. O histórico registra usuário, item e totais. O reenvio continua manual.
+- Calcula o total de cada item com arredondamento decimal para centavos, como `Round(Qtde × Preço, 2)` no Protheus, inclusive para itens KG.
+- Calcula **Preço 2ª UM** dividindo o total já arredondado pela quantidade da segunda unidade e arredondando o resultado para seis casas decimais. No exemplo de 6,06 × R$ 16,90, o total é **R$ 102,41** e o preço da segunda unidade é **16,899340**.
+- A validação de novas vendas e a edição da quantidade de vendas rejeitadas usam a mesma regra decimal. A soma da venda continua sendo a soma dos itens arredondados.
+- Remove o ajuste manual de um centavo que produzia um total diferente da regra do Protheus. As alterações já registradas permanecem no histórico; vendas antigas não têm o valor cobrado alterado automaticamente.
+- Em **Consultas**, vendas PDV rejeitadas que foram gravadas com o arredondamento antigo mostram **Recalcular arredondamento**. A ação exige confirmação de que o valor correto foi cobrado ou que a diferença foi devolvida, registra o ajuste e deixa o reenvio para o operador.
 
-Finalize ou cancele o cupom aberto antes de instalar. Se houver rejeição por preço abaixo da tabela para um peso correto, confira o total cobrado antes de ajustar e reenviar. Preços da tabela alterados ou diferenças maiores continuam exigindo conferência do cadastro.
+Finalize ou cancele o cupom aberto antes de instalar. Uma rejeição por preço mínimo da tabela, mesmo com o total correto, exige conferência do cadastro e do valor realmente cobrado antes de reenviar. O preço da segunda unidade exibido no PDV é derivado; a integração 4Sales calcula esse campo em seu lado.
 
-Validação: testes do cálculo e do payload com os itens do exemplo, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
+Validação: testes de cálculo e payload com os exemplos do Protheus, verificação TypeScript, build do frontend e conferência do instalador. Nenhuma venda real enviada ao Protheus durante a preparação desta versão.
 
 ## Alterações mantidas da versão 0.1.22
 

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
 import { precoSegundaUnidade } from '../../utils/precoSegundaUnidade';
+import { calcularTetoLegadoKg, calcularTotalEmCentavos } from '../../utils/totalItem';
 import { vendaService, VendaResumo, VendaDetalhe, StatusProtheus } from '../../services/vendaService';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
@@ -49,6 +50,23 @@ const IconeForma = ({ forma, size = 16 }: { forma: string; size?: number }) => {
 // não duplica bilhete), então aqui é só sobre não mostrar "Enviando..." além da conta — mesmo valor
 // do RETRY_STATUS_INCERTO_MS do servidor (server/fila-protheus.js).
 const CONFERIR_EM_ANDAMENTO_MS = 200000;
+
+function correcaoArredondamentoLegado(venda: VendaDetalhe | null): { totalNovo: number; itens: number } | null {
+  if (!venda || venda.statusProtheus !== 'REJEITADO' || venda.tipoOperacao !== 'PDV' || venda.desconto ||
+    venda.itens.some((item) => item.desconto) || venda.itens.reduce((soma, item) => soma + item.valorTotal, 0) !== venda.total) return null;
+  let totalNovo = venda.total;
+  let itens = 0;
+  for (const item of venda.itens) {
+    if (item.unidade?.toUpperCase() !== 'KG') continue;
+    const arredondado = calcularTotalEmCentavos(item.quantidade, item.valorUnitario);
+    const tetoAnterior = calcularTetoLegadoKg(item.quantidade, item.valorUnitario);
+    if (tetoAnterior !== null && item.valorTotal === tetoAnterior && arredondado < tetoAnterior) {
+      totalNovo += arredondado - item.valorTotal;
+      itens++;
+    }
+  }
+  return itens > 0 ? { totalNovo, itens } : null;
+}
 
 const dataLocalHoje = () => {
   const agora = new Date();
@@ -108,7 +126,7 @@ export function ConsultasPage() {
   const [itemEmEdicao, setItemEmEdicao] = useState<string | null>(null);
   const [quantidadeEditada, setQuantidadeEditada] = useState('');
   const [salvandoQuantidade, setSalvandoQuantidade] = useState(false);
-  const [salvandoPreco, setSalvandoPreco] = useState(false);
+  const [recalculandoArredondamento, setRecalculandoArredondamento] = useState(false);
   const [vendaParaExcluir, setVendaParaExcluir] = useState<VendaResumo | null>(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<'TODOS' | StatusProtheus>('TODOS');
@@ -269,9 +287,7 @@ export function ConsultasPage() {
     }
     const item = detalhe.itens.find((i) => i.id === itemId);
     if (!item) return;
-    const novoItem = item.unidade?.toUpperCase() === 'KG'
-      ? Math.ceil(quantidade * item.valorUnitario - 1e-9)
-      : Math.round(quantidade * item.valorUnitario);
+    const novoItem = calcularTotalEmCentavos(quantidade, item.valorUnitario);
     const novoTotal = detalhe.total - item.valorTotal + novoItem;
     if (!window.confirm(`Confirme a quantidade realmente vendida de ${item.descricao}: ${item.quantidade} → ${quantidade}. O total passará de ${formatMoney(detalhe.total)} para ${formatMoney(novoTotal)}. Confira o valor cobrado do cliente antes de salvar. A venda não será reenviada automaticamente.`)) return;
     setSalvandoQuantidade(true);
@@ -284,20 +300,19 @@ export function ConsultasPage() {
     mostrarToast('Quantidade salva. Confira o total e clique em reenviar quando estiver correto.', 'sucesso');
   };
 
-  const ajustarPrecoMinimo = async (itemId: string) => {
-    if (!token || !detalhe || salvandoPreco) return;
-    const item = detalhe.itens.find((i) => i.id === itemId);
-    if (!item) return;
-    const totalMinimo = Math.ceil(item.quantidade * item.valorUnitario - 1e-9);
-    const novoTotal = detalhe.total - item.valorTotal + totalMinimo;
-    if (!window.confirm(`Confirme que o cliente pagou ${formatMoney(novoTotal)} pelo cupom ${detalhe.numeroCupom}. O item ${item.descricao} passará de ${formatMoney(item.valorTotal)} para ${formatMoney(totalMinimo)} para respeitar o preço mínimo por KG. O reenvio será manual.`)) return;
-    setSalvandoPreco(true);
-    const resultado = await vendaService.ajustarPrecoMinimo(detalhe.id, itemId, totalMinimo, token);
-    setSalvandoPreco(false);
-    if (!resultado.sucesso) return mostrarToast(resultado.erro || 'Não foi possível ajustar o preço.', 'erro');
+  const recalcularArredondamento = async () => {
+    if (!token || !detalhe || recalculandoArredondamento) return;
+    const correcao = correcaoArredondamentoLegado(detalhe);
+    if (!correcao) return;
+    const diferenca = detalhe.total - correcao.totalNovo;
+    if (!window.confirm(`Cupom ${detalhe.numeroCupom}: o total local passará de ${formatMoney(detalhe.total)} para ${formatMoney(correcao.totalNovo)} (${correcao.itens} item(ns)). Confirme que o cliente pagou ${formatMoney(correcao.totalNovo)} ou que a diferença de ${formatMoney(diferenca)} foi devolvida. A venda permanecerá rejeitada até você reenviá-la.`)) return;
+    setRecalculandoArredondamento(true);
+    const resultado = await vendaService.recalcularArredondamentoRejeitado(detalhe.id, detalhe.total, correcao.totalNovo, token);
+    setRecalculandoArredondamento(false);
+    if (!resultado.sucesso) return mostrarToast(resultado.erro || 'Não foi possível recalcular a venda.', 'erro');
     setDetalhe(await vendaService.buscarVenda(detalhe.id));
     await carregar();
-    mostrarToast('Preço ajustado. Confira o cupom e clique em reenviar.', 'sucesso');
+    mostrarToast('Total corrigido e registrado no histórico. Confira e reenvie a venda.', 'sucesso');
   };
 
   // Os cards refletem todo o período selecionado; busca e status filtram apenas a lista.
@@ -450,6 +465,7 @@ export function ConsultasPage() {
               <tbody>
                 {vendasFiltradas.map((venda) => {
                   const expandido = expandidoId === venda.id;
+                  const correcaoLegada = expandido && detalhe?.id === venda.id ? correcaoArredondamentoLegado(detalhe) : null;
                   return (
                     <Fragment key={venda.id}>
                       <tr
@@ -553,7 +569,6 @@ export function ConsultasPage() {
                                           <th className="text-right py-2.5 px-4">Vl. Unit</th>
                                           <th className="text-right py-2.5 px-4">Preço 2ª UM</th>
                                           <th className="text-right py-2.5 px-4">Total</th>
-                                          <th className="text-right py-2.5 px-4">Ação</th>
                                         </tr>
                                       </thead>
                                       <tbody className="font-mono text-slate-700">
@@ -581,12 +596,6 @@ export function ConsultasPage() {
                                               {precoSegundaUnidade(item.valorTotal, item.quantidade2 ?? (item.unidade2 === item.unidade ? item.quantidade : null)) ?? '—'}
                                             </td>
                                             <td className="py-2.5 px-4 text-right font-bold">{formatMoney(item.valorTotal)}</td>
-                                            <td className="py-2.5 px-2 text-right font-sans">
-                                              {detalhe.statusProtheus === 'REJEITADO' && detalhe.tipoOperacao === 'PDV' &&
-                                                item.unidade?.toUpperCase() === 'KG' && Math.ceil(item.quantidade * item.valorUnitario - 1e-9) === item.valorTotal + 1 && (
-                                                  <button type="button" disabled={salvandoPreco} onClick={() => void ajustarPrecoMinimo(item.id)} className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 disabled:opacity-50">Ajustar +1 centavo</button>
-                                                )}
-                                            </td>
                                           </tr>
                                         ))}
                                       </tbody>
@@ -618,6 +627,15 @@ export function ConsultasPage() {
                                       Retorno do Protheus: {detalhe.resultadoProtheus.erro}
                                     </div>
                                   )}
+                                  {correcaoLegada && (
+                                    <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                                      <div className="font-bold">Arredondamento antigo encontrado</div>
+                                      <p className="mt-1">O total correto pelas quantidades registradas é {formatMoney(correcaoLegada.totalNovo)}. Confira o valor cobrado do cliente antes de corrigir.</p>
+                                      <button type="button" disabled={recalculandoArredondamento} onClick={() => void recalcularArredondamento()} className="mt-2 rounded bg-blue-600 px-3 py-1.5 font-bold text-white disabled:opacity-50">
+                                        {recalculandoArredondamento ? 'Recalculando...' : 'Recalcular arredondamento'}
+                                      </button>
+                                    </div>
+                                  )}
                                   {detalhe.totalAntesArredondamento != null && (
                                     <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
                                       Total ajustado por arredondamento dos itens: {formatMoney(detalhe.totalAntesArredondamento)} → {formatMoney(detalhe.total)}.
@@ -633,7 +651,7 @@ export function ConsultasPage() {
                                   )}
                                   {detalhe.ajustesPreco && detalhe.ajustesPreco.length > 0 && (
                                     <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                      <div className="mb-1 font-bold">Histórico de ajuste do preço mínimo</div>
+                                      <div className="mb-1 font-bold">Histórico de ajustes de valores</div>
                                       {detalhe.ajustesPreco.map((ajuste, indice) => (
                                         <div key={indice}>{ajuste.codigo}: {formatMoney(ajuste.totalItemAnterior)} → {formatMoney(ajuste.totalItemNovo)} · cupom {formatMoney(ajuste.totalAnterior)} → {formatMoney(ajuste.totalNovo)} · {ajuste.usuario} · {new Date(ajuste.ajustadoEm).toLocaleString('pt-BR')}</div>
                                       ))}

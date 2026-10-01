@@ -15,7 +15,7 @@ import { getProtheusCacheDb } from './protheus-cache-db.js';
 import { sincronizarCreditoCliente, sincronizarPrecosTabela } from './sync-bilhetes-4sales.js';
 import { imprimirCupom } from './impressora-termica.js';
 import { conferirBilhetesProtheus } from './conferencia-bilhetes-protheus.js';
-import { totalMinimoKg } from './preco-minimo-kg.js';
+import { calcularTotalCentavos, calcularTotalLegadoKgCentavos, reaisParaCentavos } from './decimal-money.js';
 
 const PORTA = process.env.API_PORT ? Number(process.env.API_PORT) : 3001;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -181,9 +181,11 @@ export function validarBilheteLocal(venda) {
     const preco = cliente?.tabela_preco ? buscarPreco.get(cliente.tabela_preco, codigoProduto) : null;
     if (!produto) erros.push(`Produto ${codigoProduto || '(sem código)'} não encontrado no cadastro local do Bilhete.`);
     if (!preco || !(preco.preco > 0)) erros.push(`Produto ${codigoProduto} não está ativo na tabela ${cliente?.tabela_preco || '(sem tabela)'}.`);
-    else if (Math.round(preco.preco * 100) > Number(item.valorUnitario)) erros.push(`Preço do produto ${codigoProduto} está abaixo do mínimo da tabela ${cliente.tabela_preco}.`);
+    else if (reaisParaCentavos(Number(preco.preco)) > Number(item.valorUnitario)) erros.push(`Preço do produto ${codigoProduto} está abaixo do mínimo da tabela ${cliente.tabela_preco}.`);
     if (!(Number(item.quantidade) > 0)) erros.push(`Quantidade inválida no produto ${codigoProduto}.`);
-    totalCalculado += Math.round(Number(item.quantidade) * Number(item.valorUnitario)) - Number(item.desconto || 0);
+    const totalItem = calcularTotalCentavos(item.quantidade, item.valorUnitario);
+    if (totalItem === null || !Number.isSafeInteger(item.desconto || 0)) erros.push(`Valores inválidos no produto ${codigoProduto}.`);
+    else totalCalculado += totalItem - (item.desconto || 0);
     if (produto?.tipo === 'MC') temMc = true; else temOutroTipo = true;
     if (PRODUTOS_BASQUETA.has(codigoProduto)) temBasqueta = true; else temOutroProduto = true;
   }
@@ -925,14 +927,11 @@ export function iniciarApi() {
       venda.cliente.cpf = clienteCache.cpf_cnpj;
       venda.cliente.tabelaPreco = clienteCache.tabela_preco;
     } else {
-      const itemInvalido = venda.itens.find((item) =>
-        !Number.isFinite(item.quantidade) || item.quantidade <= 0 ||
-        !Number.isSafeInteger(item.valorUnitario) || !Number.isSafeInteger(item.desconto || 0) ||
-        !Number.isSafeInteger(item.valorTotal) ||
-        ![Math.round(item.quantidade * item.valorUnitario),
-          ...(item.produto?.unidade?.toUpperCase() === 'KG' ? [Math.ceil(item.quantidade * item.valorUnitario - 1e-9)] : [])]
-          .includes(item.valorTotal + (item.desconto || 0))
-      );
+      const itemInvalido = venda.itens.find((item) => {
+        const totalItem = calcularTotalCentavos(item.quantidade, item.valorUnitario);
+        return totalItem === null || !Number.isSafeInteger(item.desconto || 0) ||
+          !Number.isSafeInteger(item.valorTotal) || totalItem !== item.valorTotal + (item.desconto || 0);
+      });
       if (itemInvalido) return res.status(400).json({ erro: 'Total de item inválido. Confira os valores da venda.' });
       // A soma deve usar os centavos já arredondados em cada linha, como no cupom e no Protheus.
       // Somar quantidades x preços antes de arredondar pode diferir em um centavo com itens KG.
@@ -1158,11 +1157,9 @@ export function iniciarApi() {
         if (!item) return { http: 404, erro: 'Item não encontrado nesta venda.' };
         if (item.desconto || venda.desconto) return { http: 409, erro: 'Venda com desconto exige conferência manual.' };
         if (item.quantidade === quantidade) return { http: 400, erro: 'A quantidade informada é igual à atual.' };
-        const totalItem = item.unidade?.toUpperCase() === 'KG'
-          ? Math.ceil(quantidade * item.valor_unitario - 1e-9)
-          : Math.round(quantidade * item.valor_unitario);
+        const totalItem = calcularTotalCentavos(quantidade, item.valor_unitario);
         const totalVenda = db.prepare('SELECT COALESCE(SUM(valor_total),0) AS total FROM venda_itens WHERE venda_id=?').get(venda.id).total - item.valor_total + totalItem;
-        if (!Number.isSafeInteger(totalItem) || !Number.isSafeInteger(totalVenda) || totalVenda <= 0) return { http: 400, erro: 'Total calculado inválido.' };
+        if (totalItem === null || !Number.isSafeInteger(totalVenda) || totalVenda <= 0) return { http: 400, erro: 'Total calculado inválido.' };
         if (venda.valor_recebido != null && venda.valor_recebido < totalVenda) {
           return { http: 409, erro: 'O novo total supera o valor recebido em dinheiro. Confira o pagamento antes de editar.' };
         }
@@ -1186,57 +1183,66 @@ export function iniciarApi() {
     }
   });
 
-  app.post('/api/vendas/:id/itens/:itemId/ajustar-preco-minimo', autenticarMiddleware, async (req, res) => {
-    if (req.body?.confirmado !== true || !Number.isSafeInteger(req.body?.totalItemEsperado)) {
-      return res.status(400).json({ erro: 'Confirme o valor do item antes de salvar.' });
+  app.post('/api/vendas/:id/recalcular-arredondamento', autenticarMiddleware, (req, res) => {
+    const { confirmado, totalAtualEsperado, totalEsperado } = req.body || {};
+    if (confirmado !== true || !Number.isSafeInteger(totalAtualEsperado) || !Number.isSafeInteger(totalEsperado)) {
+      return res.status(400).json({ erro: 'Confirme os totais antes de recalcular a venda.' });
     }
     const db = getDb();
-    const vendaAtual = db.prepare("SELECT * FROM vendas WHERE id=? AND deletado='' AND tipo_operacao='PDV' AND status_protheus='REJEITADO'").get(req.params.id);
-    if (!vendaAtual) return res.status(409).json({ erro: 'Somente vendas PDV rejeitadas podem ter o preço ajustado.' });
     try {
-      await sincronizarPrecosTabela(vendaAtual.tabela_preco);
-      const cache = getProtheusCacheDb();
       const resultado = db.transaction(() => {
         const venda = db.prepare("SELECT * FROM vendas WHERE id=? AND deletado='' AND tipo_operacao='PDV' AND status_protheus='REJEITADO'").get(req.params.id);
-        if (!venda) return { http: 409, erro: 'O status da venda mudou. Atualize a consulta.' };
-        const item = db.prepare('SELECT * FROM venda_itens WHERE id=? AND venda_id=?').get(req.params.itemId, venda.id);
-        if (!item) return { http: 404, erro: 'Item não encontrado nesta venda.' };
-        if (item.unidade?.toUpperCase() !== 'KG' || (item.unidade2 && item.unidade2.toUpperCase() !== 'KG') ||
-          (item.quantidade2 != null && Math.abs(item.quantidade2 - item.quantidade) > 0.0001) || item.desconto || venda.desconto) {
-          return { http: 409, erro: 'Ajuste disponível somente para item KG sem conversão e sem desconto.' };
+        if (!venda) return { http: 409, erro: 'Somente vendas PDV rejeitadas podem ser recalculadas.' };
+        const itens = db.prepare('SELECT * FROM venda_itens WHERE venda_id=? ORDER BY rowid').all(venda.id);
+        if (!itens.length || venda.desconto || itens.some((item) => item.desconto)) {
+          return { http: 409, erro: 'A venda deve ter itens e não pode ter descontos.' };
         }
-        const preco = cache.prepare('SELECT preco,preco_segunda_unidade FROM precos WHERE tabela=? AND produto=? AND ativo=1')
-          .get(venda.tabela_preco, item.codigo_produto);
-        if (!preco || Math.round(Number(preco.preco) * 100) !== item.valor_unitario) {
-          return { http: 409, erro: 'O preço da tabela mudou. Confira o cadastro antes de ajustar esta venda.' };
+        const totalAnterior = itens.reduce((soma, item) => soma + item.valor_total, 0);
+        if (!Number.isSafeInteger(totalAnterior) || venda.total !== totalAnterior) {
+          return { http: 409, erro: 'Total da venda diverge da soma anterior dos itens. Confira o histórico.' };
         }
-        const minimo2 = Number(preco.preco_segunda_unidade) > 0 ? Number(preco.preco_segunda_unidade) : Number(preco.preco);
-        const totalMinimo = totalMinimoKg(item.quantidade, item.valor_unitario, minimo2);
-        if (totalMinimo == null) return { http: 409, erro: 'Preço mínimo ou quantidade inválidos para o ajuste.' };
-        if (totalMinimo <= item.valor_total) return { http: 409, erro: 'Este item já atende ao preço mínimo da tabela.' };
-        if (totalMinimo !== req.body.totalItemEsperado || totalMinimo - item.valor_total > 1) {
-          return { http: 409, erro: 'O ajuste calculado difere da confirmação. Atualize a consulta e confira os preços.' };
+        if (totalAtualEsperado !== totalAnterior) {
+          return { http: 409, erro: 'O total atual mudou. Atualize a consulta antes de confirmar.' };
         }
-        const totalVenda = db.prepare('SELECT SUM(valor_total) AS total FROM venda_itens WHERE venda_id=?').get(venda.id).total - item.valor_total + totalMinimo;
-        if (venda.valor_recebido != null && venda.valor_recebido < totalVenda) {
-          return { http: 409, erro: 'O novo total supera o valor recebido registrado. Confira o pagamento.' };
+        const ajustes = [];
+        for (const item of itens) {
+          if (item.unidade?.toUpperCase() !== 'KG') continue;
+          const canonico = calcularTotalCentavos(item.quantidade, item.valor_unitario);
+          const legado = calcularTotalLegadoKgCentavos(item.quantidade, item.valor_unitario);
+          if (canonico !== null && canonico > 0 && legado !== null && legado !== canonico && item.valor_total === legado) {
+            ajustes.push({ item, novoTotal: canonico });
+          }
+        }
+        if (!ajustes.length) return { http: 409, erro: 'Nenhum item KG tem o arredondamento antigo para corrigir.' };
+        const totalNovo = totalAnterior + ajustes.reduce((soma, ajuste) => soma + ajuste.novoTotal - ajuste.item.valor_total, 0);
+        if (!Number.isSafeInteger(totalNovo) || totalNovo <= 0 || totalEsperado !== totalNovo) {
+          return { http: 409, erro: 'O novo total difere da confirmação. Atualize a consulta.' };
+        }
+        if (venda.valor_recebido != null && venda.valor_recebido < totalNovo) {
+          return { http: 409, erro: 'O novo total supera o valor recebido em dinheiro. Confira o pagamento.' };
         }
         const agora = new Date().toISOString();
-        db.prepare('UPDATE venda_itens SET valor_total=? WHERE id=?').run(totalMinimo, item.id);
-        db.prepare(`UPDATE vendas SET total=?,subtotal=?,troco=CASE WHEN valor_recebido IS NOT NULL THEN valor_recebido-? ELSE troco END,
-          editado_em=?,payload_protheus=NULL WHERE id=? AND status_protheus='REJEITADO'`)
-          .run(totalVenda, totalVenda, totalVenda, agora, venda.id);
-        db.prepare(`INSERT INTO venda_ajustes_preco
+        let totalDuranteAjuste = totalAnterior;
+        const gravarAjuste = db.prepare(`INSERT INTO venda_ajustes_preco
           (id,venda_id,item_id,usuario_id,total_item_anterior,total_item_novo,total_venda_anterior,total_venda_novo,ajustado_em)
-          VALUES (?,?,?,?,?,?,?,?,?)`)
-          .run(randomUUID(), venda.id, item.id, req.usuario.id, item.valor_total, totalMinimo, venda.total, totalVenda, agora);
-        return { http: 200, sucesso: true, total: totalVenda };
+          VALUES (?,?,?,?,?,?,?,?,?)`);
+        const atualizarItem = db.prepare('UPDATE venda_itens SET valor_total=? WHERE id=? AND venda_id=?');
+        for (const { item, novoTotal } of ajustes) {
+          atualizarItem.run(novoTotal, item.id, venda.id);
+          const proximoTotal = totalDuranteAjuste + novoTotal - item.valor_total;
+          gravarAjuste.run(randomUUID(), venda.id, item.id, req.usuario.id, item.valor_total, novoTotal, totalDuranteAjuste, proximoTotal, agora);
+          totalDuranteAjuste = proximoTotal;
+        }
+        db.prepare(`UPDATE vendas SET total=?, subtotal=?, troco=CASE WHEN valor_recebido IS NOT NULL THEN valor_recebido-? ELSE troco END,
+          editado_em=?, payload_protheus=NULL WHERE id=? AND status_protheus='REJEITADO'`)
+          .run(totalNovo, totalNovo, totalNovo, agora, venda.id);
+        return { http: 200, sucesso: true, totalAnterior, total: totalNovo, itensAjustados: ajustes.length };
       })();
       const { http, ...corpo } = resultado;
       res.status(http).json(corpo);
     } catch (erro) {
-      console.error('[api] Falha ao ajustar preço mínimo:', erro);
-      res.status(503).json({ erro: 'Não foi possível conferir o preço atual da tabela no Protheus. Tente novamente quando a conexão estiver disponível.' });
+      console.error('[api] Falha ao recalcular arredondamento:', erro);
+      res.status(500).json({ erro: 'Não foi possível recalcular a venda.' });
     }
   });
 

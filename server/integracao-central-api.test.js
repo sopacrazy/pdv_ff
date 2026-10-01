@@ -7,7 +7,6 @@ import path from 'node:path';
 process.env.PDV_DB_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'pdv-conta-central-'));
 process.env.API_PORT = '0';
 const { getDb } = await import('./db.js');
-const { getProtheusCacheDb } = await import('./protheus-cache-db.js');
 const { iniciarApi } = await import('./api.js');
 const db = getDb();
 const servidor = await iniciarApi();
@@ -59,14 +58,26 @@ test('API salva venda PDV pelo total de cada item arredondado, mesmo com fronten
   assert.deepEqual(db.prepare('SELECT subtotal, total FROM vendas WHERE id=?').get(resposta.corpo.id), { subtotal: 2387, total: 2387 });
 });
 
-test('API aceita total KG arredondado para cima antes do pagamento', async () => {
+test('API aceita somente o total KG half up antes do pagamento', async () => {
   const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
-    subtotal: 783, desconto: 0, total: 783, formaPagamento: '001',
+    subtotal: 782, desconto: 0, total: 782, formaPagamento: '001',
     itens: [{ produto: { codigo: '211.064', descricao: 'MELAO CEPI', unidade: 'KG' }, quantidade: 0.99,
-      valorUnitario: 790, valorTotal: 783, desconto: 0 }] };
+      valorUnitario: 790, valorTotal: 782, desconto: 0 }] };
   const resposta = await json('/api/vendas', 'token1', venda);
   assert.equal(resposta.status, 200, JSON.stringify(resposta.corpo));
-  assert.equal(db.prepare('SELECT total FROM vendas WHERE id=?').get(resposta.corpo.id).total, 783);
+  assert.equal(db.prepare('SELECT total FROM vendas WHERE id=?').get(resposta.corpo.id).total, 782);
+  assert.equal((await json('/api/vendas', 'token1', { ...venda, itens: [{ ...venda.itens[0], valorTotal: 783 }] })).status, 400);
+});
+
+test('API grava exemplo 6,06 × 16,90 como R$ 102,41', async () => {
+  const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
+    subtotal: 10241, desconto: 0, total: 10241, formaPagamento: '001',
+    itens: [{ produto: { codigo: '211.064', descricao: 'MELAO CEPI', unidade: 'KG', segundaUnidade: 'KG', fatorConversao: 1, tipoConversao: 'D' }, quantidade: 6.06,
+      valorUnitario: 1690, valorTotal: 10241, desconto: 0 }] };
+  const resposta = await json('/api/vendas', 'token1', venda);
+  assert.equal(resposta.status, 200, JSON.stringify(resposta.corpo));
+  assert.deepEqual(db.prepare('SELECT quantidade,valor_unitario,valor_total,quantidade2 FROM venda_itens WHERE venda_id=?').get(resposta.corpo.id),
+    { quantidade: 6.06, valor_unitario: 1690, valor_total: 10241, quantidade2: 6.06 });
 });
 
 test('edita quantidade apenas em venda PDV rejeitada, recalcula e registra auditoria sem reenviar', async () => {
@@ -99,32 +110,57 @@ test('edita quantidade apenas em venda PDV rejeitada, recalcula e registra audit
   assert.equal((await editar(1.0001)).status, 400);
 });
 
-test('ajusta um centavo de item KG rejeitado somente com confirmação e tabela conferida', async () => {
-  const cache = getProtheusCacheDb();
-  const agora = new Date().toISOString();
-  cache.prepare(`INSERT OR REPLACE INTO precos (tabela,produto,preco,preco_segunda_unidade,ativo,atualizado_em)
-    VALUES ('015','211.064',7.9,7.9,1,?)`).run(agora);
-  cache.prepare(`INSERT OR REPLACE INTO cache_metadata (chave,valor,atualizado_em)
-    VALUES ('precos_015',?,?)`).run(agora, agora);
+test('recalcula apenas itens KG com teto legado, sem alterar quantidade ou reenviar', async () => {
+  const itens = [
+    { produto: { codigo: 'KG1', descricao: 'MELAO', unidade: 'KG' }, quantidade: 0.99, valorUnitario: 790, valorTotal: 782, desconto: 0 },
+    { produto: { codigo: 'KG2', descricao: 'OUTRO KG', unidade: 'KG' }, quantidade: 6.06, valorUnitario: 1690, valorTotal: 10241, desconto: 0 },
+    { produto: { codigo: 'UN1', descricao: 'CAIXA', unidade: 'UN' }, quantidade: 2, valorUnitario: 100, valorTotal: 200, desconto: 0 },
+  ];
+  const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
+    subtotal: 11223, desconto: 0, total: 11223, formaPagamento: 'Dinheiro', valorRecebido: 12000, troco: 777, itens };
+  const criada = await json('/api/vendas', 'token1', venda);
+  assert.equal(criada.status, 200, JSON.stringify(criada.corpo));
+  const id = criada.corpo.id;
+  const gravados = db.prepare('SELECT id,codigo_produto,quantidade,valor_total FROM venda_itens WHERE venda_id=? ORDER BY rowid').all(id);
+  db.prepare('UPDATE venda_itens SET valor_total=valor_total+1 WHERE venda_id=? AND codigo_produto IN (\'KG1\',\'KG2\')').run(id);
+  db.prepare("UPDATE vendas SET total=11225,subtotal=11225,troco=775,status_protheus='REJEITADO',payload_protheus='{}' WHERE id=?").run(id);
+  const rota = `/api/vendas/${id}/recalcular-arredondamento`;
+  const confirmar = (totalAtualEsperado, totalEsperado, token = 'token2') =>
+    json(rota, token, { confirmado: true, totalAtualEsperado, totalEsperado });
+  assert.equal((await json(rota, 'token2', { totalAtualEsperado: 11225, totalEsperado: 11223 })).status, 400);
+  assert.equal((await confirmar(11224, 11223)).status, 409);
+  assert.equal((await confirmar(11225, 11224)).status, 409);
+  assert.equal(db.prepare('SELECT total FROM vendas WHERE id=?').get(id).total, 11225);
+  const resultado = await confirmar(11225, 11223);
+  assert.deepEqual(resultado, { status: 200, corpo: { sucesso: true, totalAnterior: 11225, total: 11223, itensAjustados: 2 } });
+  assert.deepEqual(db.prepare('SELECT codigo_produto,quantidade,valor_total FROM venda_itens WHERE venda_id=? ORDER BY rowid').all(id),
+    gravados.map(({ codigo_produto, quantidade, valor_total }) => ({ codigo_produto, quantidade, valor_total })));
+  assert.deepEqual(db.prepare('SELECT total,subtotal,troco,status_protheus,payload_protheus FROM vendas WHERE id=?').get(id),
+    { total: 11223, subtotal: 11223, troco: 777, status_protheus: 'REJEITADO', payload_protheus: null });
+  assert.deepEqual(db.prepare('SELECT usuario_id,total_item_anterior,total_item_novo,total_venda_anterior,total_venda_novo FROM venda_ajustes_preco WHERE venda_id=? ORDER BY rowid').all(id), [
+    { usuario_id: 'u2', total_item_anterior: 783, total_item_novo: 782, total_venda_anterior: 11225, total_venda_novo: 11224 },
+    { usuario_id: 'u2', total_item_anterior: 10242, total_item_novo: 10241, total_venda_anterior: 11224, total_venda_novo: 11223 },
+  ]);
+  assert.equal((await confirmar(11223, 11223)).status, 409);
+  assert.equal(db.prepare('SELECT COUNT(*) AS total FROM venda_ajustes_preco WHERE venda_id=?').get(id).total, 2);
+});
+
+test('recalcular arredondamento preserva itens de outra origem e exige total anterior consistente', async () => {
   const venda = { loja: '01', caixa: '001', cliente: { nome: 'Cliente', cpf: '' },
     subtotal: 782, desconto: 0, total: 782, formaPagamento: '001',
-    itens: [{ produto: { codigo: '211.064', descricao: 'MELAO CEPI', unidade: 'KG' }, quantidade: 0.99,
-      valorUnitario: 790, valorTotal: 782, desconto: 0 }] };
+    itens: [{ produto: { codigo: 'KG3', descricao: 'MELAO', unidade: 'KG' }, quantidade: 0.99, valorUnitario: 790, valorTotal: 782, desconto: 0 }] };
   const criada = await json('/api/vendas', 'token1', venda);
-  assert.equal(criada.status, 200);
+  assert.equal(criada.status, 200, JSON.stringify(criada.corpo));
   const id = criada.corpo.id;
-  const itemId = db.prepare('SELECT id FROM venda_itens WHERE venda_id=?').get(id).id;
-  db.prepare("UPDATE vendas SET status_protheus='REJEITADO',payload_protheus='{}' WHERE id=?").run(id);
-  const rota = `/api/vendas/${id}/itens/${itemId}/ajustar-preco-minimo`;
-  assert.equal((await json(rota, 'token1', { confirmado: true, totalItemEsperado: 784 })).status, 409);
-  const ajustada = await json(rota, 'token2', { confirmado: true, totalItemEsperado: 783 });
-  assert.equal(ajustada.status, 200, JSON.stringify(ajustada.corpo));
-  assert.equal(ajustada.corpo.total, 783);
-  assert.equal(db.prepare('SELECT valor_total FROM venda_itens WHERE id=?').get(itemId).valor_total, 783);
-  const depois = db.prepare('SELECT total,status_protheus,payload_protheus FROM vendas WHERE id=?').get(id);
-  assert.deepEqual(depois, { total: 783, status_protheus: 'REJEITADO', payload_protheus: null });
-  assert.deepEqual(db.prepare('SELECT usuario_id,total_item_anterior,total_item_novo FROM venda_ajustes_preco WHERE venda_id=?').get(id),
-    { usuario_id: 'u2', total_item_anterior: 782, total_item_novo: 783 });
+  const rota = `/api/vendas/${id}/recalcular-arredondamento`;
+  const corpo = { confirmado: true, totalAtualEsperado: 783, totalEsperado: 782 };
+  assert.equal((await json(rota, 'token1', corpo)).status, 409);
+  db.prepare("UPDATE vendas SET status_protheus='REJEITADO',total=783 WHERE id=?").run(id);
+  assert.equal((await json(rota, 'token1', corpo)).status, 409);
+  db.prepare('UPDATE venda_itens SET valor_total=784 WHERE venda_id=?').run(id);
+  db.prepare('UPDATE vendas SET total=784 WHERE id=?').run(id);
+  assert.equal((await json(rota, 'token1', { ...corpo, totalAtualEsperado: 784 })).status, 409);
+  assert.equal(db.prepare('SELECT valor_total FROM venda_itens WHERE venda_id=?').get(id).valor_total, 784);
 });
 
 test('localizar vendedor usa o cadastro sincronizado e não autentica o operador no REST', async () => {

@@ -146,12 +146,12 @@ export const vendaService = {
     }
   },
 
-  ajustarPrecoMinimo: async (id: string, itemId: string, totalItemEsperado: number, token: string): Promise<{ sucesso: boolean; erro?: string }> => {
+  recalcularArredondamentoRejeitado: async (id: string, totalAtualEsperado: number, totalEsperado: number, token: string): Promise<{ sucesso: boolean; erro?: string }> => {
     try {
-      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/itens/${encodeURIComponent(itemId)}/ajustar-preco-minimo`, {
+      const resp = await fetch(`/api/vendas/${encodeURIComponent(id)}/recalcular-arredondamento`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ confirmado: true, totalItemEsperado }),
+        body: JSON.stringify({ confirmado: true, totalAtualEsperado, totalEsperado }),
       });
       const corpo = await resp.json().catch(() => ({}));
       return resp.ok ? { sucesso: true } : { sucesso: false, erro: corpo.erro || `Erro HTTP ${resp.status}` };

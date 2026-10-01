@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { ArrowLeft, Search, Trash2, ChevronDown } from 'lucide-react';
 import { formatMoney } from '../../utils/formatters';
+import { calcularTotalEmCentavos, reaisParaCentavos } from '../../utils/totalItem';
 import { produtoService } from '../../services/produtoService';
 import { Produto } from '../../types/produto';
 import { useAuthStore } from '../../store/authStore';
@@ -120,11 +121,11 @@ export function BilheteFormPage() {
       if (existente) {
         return atual.map((i) =>
           i.codigo === produto.codigo
-            ? { ...i, quantidade: i.quantidade + 1, total: Math.round((i.quantidade + 1) * i.precoUnitario) }
+            ? { ...i, quantidade: i.quantidade + 1, total: calcularTotalEmCentavos(i.quantidade + 1, i.precoUnitario) }
             : i
         );
       }
-      const precoUnitario = Math.round(produto.preco * 100);
+      const precoUnitario = reaisParaCentavos(produto.preco);
       const novoItem: ItemBilhete = {
         id: gerarId(),
         codigo: produto.codigo,
@@ -142,7 +143,7 @@ export function BilheteFormPage() {
 
   const alterarQuantidade = (itemId: string, quantidade: number) => {
     setItens((atual) =>
-      atual.map((i) => (i.id === itemId ? { ...i, quantidade, total: Math.round(quantidade * i.precoUnitario) } : i))
+      atual.map((i) => (i.id === itemId ? { ...i, quantidade, total: calcularTotalEmCentavos(quantidade, i.precoUnitario) } : i))
     );
   };
 
@@ -406,7 +407,7 @@ export function BilheteFormPage() {
                         <div className="font-bold text-slate-800">{produto.descricao}</div>
                         <div className="text-slate-400 font-mono">Cód: {produto.codigo}</div>
                       </div>
-                      <span className="font-bold tabular-nums text-slate-700">{formatMoney(Math.round(produto.preco * 100))}</span>
+                      <span className="font-bold tabular-nums text-slate-700">{formatMoney(reaisParaCentavos(produto.preco))}</span>
                     </li>
                   ))}
                 </ul>

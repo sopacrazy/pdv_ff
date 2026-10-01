@@ -22,8 +22,8 @@ android {
         // Incrementar os dois a cada release: versionCode é o que o Android usa pra decidir se um
         // APK novo é "mais recente" (tem que ser estritamente maior, sempre); versionName é só o
         // texto mostrado pro usuário — mantido alinhado com a versão do package.json.
-        versionCode 11
-        versionName "0.1.23"
+        versionCode 12
+        versionName "0.1.24"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

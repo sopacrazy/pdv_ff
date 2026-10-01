@@ -74,12 +74,29 @@ test('bloqueia venda sem condição de pagamento, descontos e preços não homol
  assert.throws(() => montar(venda,[{...precos[0],minimumSalesPrice:160}]), /165.00.*160.00/);
  assert.throws(() => montar({...venda,total:1}), /Total/);
 });
-test('item KG ajustado em um centavo mantém preço efetivo acima da tabela', () => {
+test('KG usa preço original e total half up no payload do exemplo Protheus', () => {
+ const itemKg = { codigo_produto: '211.064', descricao: 'MELAO', unidade: 'KG', quantidade: 6.06, valor_unitario: 1690, valor_total: 10241, desconto: 0 };
+ const pedido = montarVenda4Sales({ ...venda, tipo_operacao: 'PDV', total: 10241 }, [itemKg], vendedor, cliente,
+   [{ itemCode: '211.064', activeItemPrice: '1', minimumSalesPrice: 16.9 }]);
+ assert.equal(pedido.body.items[0].quantity, 6.06);
+ assert.equal(pedido.body.items[0].price, 16.9);
+ assert.equal(pedido.body.items[0].total, 102.41);
+ assert.equal(pedido.body.value, 102.41);
+ assert.notEqual(pedido.body.items[0].price, 16.90099);
+});
+test('KG com 0,99 × 7,90 usa total de 7,82', () => {
+ const itemKg = { codigo_produto: '211.064', descricao: 'MELAO', unidade: 'KG', quantidade: 0.99, valor_unitario: 790, valor_total: 782, desconto: 0 };
+ const pedido = montarVenda4Sales({ ...venda, tipo_operacao: 'PDV', total: 782 }, [itemKg], vendedor, cliente,
+   [{ itemCode: '211.064', activeItemPrice: '1', minimumSalesPrice: 7.9 }]);
+ assert.equal(pedido.body.items[0].price, 7.9);
+ assert.equal(pedido.body.items[0].total, 7.82);
+});
+test('item KG legado com teto de centavo ainda pode ser reenviado', () => {
  const itemKg = { codigo_produto: '211.064', descricao: 'MELAO', unidade: 'KG', quantidade: 0.99, valor_unitario: 790, valor_total: 783, desconto: 0 };
  const pedido = montarVenda4Sales({ ...venda, tipo_operacao: 'PDV', total: 783 }, [itemKg], vendedor, cliente,
    [{ itemCode: '211.064', activeItemPrice: '1', minimumSalesPrice: 7.9 }]);
  assert.equal(pedido.body.items[0].total, 7.83);
- assert.ok(pedido.body.items[0].price >= 7.9);
+ assert.equal(pedido.body.items[0].price, 7.909091);
  assert.equal(pedido.body.value, 7.83);
 });
 test('somente retorno EFE da mesma venda e empresa confirma inclusão; não repete falhas', async () => {
